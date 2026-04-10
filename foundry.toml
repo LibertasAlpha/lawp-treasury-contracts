@@ -3,4 +3,18 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+# Base (L2) targeted optimizations
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+evm_version = "paris" 
+
+[rpc_endpoints]
+base = "${BASE_MAINNET_RPC}"
+base_sepolia = "${BASE_SEPOLIA_RPC}"
+
+[etherscan]
+base = { key = "${BASESCAN_API_KEY}" }
+base_sepolia = { key = "${BASESCAN_API_KEY}" }
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
