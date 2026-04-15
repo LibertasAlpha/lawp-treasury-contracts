@@ -1,39 +1,39 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
-/**
- * @title LAWPErrors
- * @dev Centralized custom errors for the LAWP ecosystem.
- * Utilizing custom errors over require strings saves deployment and runtime gas
- * while providing standard, machine-readable failure modes.
- */
-library LAWPErrors {
-    /* -------------------------------------------------------------------------- */
-    /* Compliance Engine Errors                           */
-    /* -------------------------------------------------------------------------- */
-    error Error_ExceedsPrincipal();
-    error Error_InvalidFlowType();
-    error Error_InvalidSplitAllocation();
-    error Error_RoCTokenMismatch();
+/// @title LAWP Custom Errors
+/// @author Obinna Franklin Duru (BinnaDev)
+/// @notice Centralized error declarations for the entire protocol.
+/// @dev Prefixing ensures precise debugging and clear identification of the reverting contract.
+interface LAWPErrors {
+    /*//////////////////////////////////////////////////////////////
+                        COMPLIANCE ENGINE ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error LAWPComplianceEngine_InvalidRiskFee();
+    error LAWPComplianceEngine_SystemPaused();
+    error LAWPComplianceEngine_UnauthorizedCaller();
+    error LAWPComplianceEngine_InvalidFlowType();
+    error LAWPComplianceEngine_ExceedsPrincipalCap();
 
-    /* -------------------------------------------------------------------------- */
-    /* Access Control & Auth Errors                       */
-    /* -------------------------------------------------------------------------- */
-    error Error_Unauthorized();
-    error Error_InvalidSigner();
-    error Error_RoleNotRegistered(bytes32 role, address account);
+    /*//////////////////////////////////////////////////////////////
+                            TREASURY ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error LAWPTreasury_YieldAlreadyClaimed();
+    error LAWPTreasury_UnauthorizedCommand();
+    error LAWPTreasury_InsufficientVaultFunds();
 
-    /* -------------------------------------------------------------------------- */
-    /* Multi-Signature Errors                             */
-    /* -------------------------------------------------------------------------- */
-    error Error_ProposalExpired();
-    error Error_ProposalAlreadyExecuted();
-    error Error_InsufficientSignatures();
-    error Error_InvalidSignatureLength();
+    /*//////////////////////////////////////////////////////////////
+                          IMPACT TOKEN ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error LAWPImpactToken_TransferIntercepted();
+    error LAWPImpactToken_InvalidTokenId();
+    error LAWPImpactToken_ZeroAddressMint();
 
-    /* -------------------------------------------------------------------------- */
-    /* Generic Validation Errors                          */
-    /* -------------------------------------------------------------------------- */
-    error Error_ZeroAddress();
-    error Error_ZeroAmount();
+    /*//////////////////////////////////////////////////////////////
+                           MULTI-SIG ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error LAWPMultiSigController_InvalidSignatures();
+    error LAWPMultiSigController_BelowThreshold();
+    error LAWPMultiSigController_ProposalAlreadyExecuted();
+    error LAWPMultiSigController_InvalidPayload();
 }
