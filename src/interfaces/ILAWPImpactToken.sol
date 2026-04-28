@@ -2,11 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { LAWPStructs } from "../libraries/LAWPStructs.sol";
+import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @title ILAWPImpactToken
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Interface for the ERC-721 token representing fractional Impact Equity.
-interface ILAWPImpactToken {
+interface ILAWPImpactToken is IERC721 {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/

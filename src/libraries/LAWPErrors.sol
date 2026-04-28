@@ -14,6 +14,13 @@ interface LAWPErrors {
     error LAWPComplianceEngine_UnauthorizedCaller();
     error LAWPComplianceEngine_InvalidFlowType();
     error LAWPComplianceEngine_ExceedsPrincipalCap();
+    error LAWPComplianceEngine_ArrayMismatch();
+    error LAWPComplianceEngine_InvalidBPS();
+    error LAWPComplianceEngine_ZeroAddress();
+    error LAWPComplianceEngine_InvalidAmount();
+    error LAWPComplianceEngine_PoolAlreadyExists();
+    error LAWPComplianceEngine_InvalidActor();
+    error LAWPComplianceEngine_ArrayTooLarge();
 
     /*//////////////////////////////////////////////////////////////
                             TREASURY ERRORS
@@ -21,6 +28,9 @@ interface LAWPErrors {
     error LAWPTreasury_YieldAlreadyClaimed();
     error LAWPTreasury_UnauthorizedCommand();
     error LAWPTreasury_InsufficientVaultFunds();
+    error LAWPTreasury_ZeroAddress();
+    error LAWPTreasury_InvalidAmount();
+    error LAWPTreasury_RiskPoolNotSet();
 
     /*//////////////////////////////////////////////////////////////
                           IMPACT TOKEN ERRORS
@@ -28,6 +38,12 @@ interface LAWPErrors {
     error LAWPImpactToken_TransferIntercepted();
     error LAWPImpactToken_InvalidTokenId();
     error LAWPImpactToken_ZeroAddressMint();
+    error LAWPImpactToken_InvalidRocAmount();
+    error LAWPImpactToken_ZeroAddress();
+    error LAWPImpactToken_InvalidBaseURI();
+    error LAWPImpactToken_InvalidPrincipal();
+    error LAWPImpactToken_InvalidBPS();
+    error LAWPImpactToken_InvalidPoolId();
 
     /*//////////////////////////////////////////////////////////////
                            MULTI-SIG ERRORS
