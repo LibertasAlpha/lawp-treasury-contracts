@@ -19,5 +19,5 @@ interface ILAWPActorRegistry {
     function riskPoolWallet() external view returns (address);
 
     /// @notice Returns the DApp Team (Dev) wallet address.
-    function  devWallet() external view returns (address);
+    function devWallet() external view returns (address);
 }

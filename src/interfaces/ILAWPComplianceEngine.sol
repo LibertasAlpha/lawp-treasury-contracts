@@ -26,9 +26,6 @@ interface ILAWPComplianceEngine {
     /// @notice Emitted when the Multi-Sig triggers a validated revenue distribution.
     event RevenueRouted(uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount);
 
-    /// @notice Emitted when a new project pool is created.
-    event PoolCreated(uint256 indexed poolId, uint256 createdAt);
-
     /// @notice Emitted when a risk fee is assessed for a project pool.
     event RiskFeeAssessed(
         uint256 indexed poolId, uint256 grossAmount, uint256 feeAmount, uint256 netCapital

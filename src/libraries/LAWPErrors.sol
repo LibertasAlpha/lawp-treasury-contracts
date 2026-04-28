@@ -21,6 +21,7 @@ interface LAWPErrors {
     error LAWPComplianceEngine_PoolAlreadyExists();
     error LAWPComplianceEngine_InvalidActor();
     error LAWPComplianceEngine_ArrayTooLarge();
+    error LAWPComplianceEngine_NothingToClaim();
 
     /*//////////////////////////////////////////////////////////////
                             TREASURY ERRORS

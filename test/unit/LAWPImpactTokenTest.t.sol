@@ -5,7 +5,6 @@ import { Test } from "forge-std/Test.sol";
 import { LAWPImpactToken } from "../../src/core/LAWPImpactToken.sol";
 import { LAWPErrors } from "../../src/libraries/LAWPErrors.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
-import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 /*
  * ============================================================================

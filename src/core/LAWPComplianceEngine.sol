@@ -39,15 +39,8 @@ contract LAWPComplianceEngine is
 
     uint256 public riskFeeBPS; // e.g., 1000 = 10%
     uint256 public constant MAX_RISK_FEE = 1000; // Circuit Breaker: Absolute max 10%
-    uint256 public constant MAX_CONTRIBUTORS = 50; // Circuit Breaker: Max contributors per pool to prevent DoS
+    uint256 public constant MAX_CONTRIBUTORS = 20; // Circuit Breaker: Max contributors per pool to prevent DoS
     uint256 public constant TOTAL_BPS = 10_000; // 100%
-
-    // Structural Tracking
-    struct Pool {
-        bool exists;
-        uint256 createdAt;
-    }
-    mapping(uint256 => Pool) public pools;
 
     // O(1) Global Yield Trackers
     mapping(uint256 => uint256) public poolYieldTracker; // Tracks global Yield per poolId
@@ -138,51 +131,32 @@ contract LAWPComplianceEngine is
         address[] calldata _contributors,
         uint256[] calldata _bpsShares
     ) external override whenNotPaused nonReentrant {
-        if (pools[_poolId].exists) {
-            revert LAWPComplianceEngine_PoolAlreadyExists();
-        }
+        // checks: validate inputs, enforce max contributors, and ensure BPS sums to 100%
         if (_grossAmount == 0) revert LAWPComplianceEngine_InvalidAmount();
 
         uint256 contributorsLength = _contributors.length;
+        if (contributorsLength > MAX_CONTRIBUTORS) revert LAWPComplianceEngine_ArrayTooLarge();
 
         // Bounded loops to prevent DoS
         if (contributorsLength == 0 || contributorsLength != _bpsShares.length) {
             revert LAWPComplianceEngine_ArrayMismatch();
         }
-        if (contributorsLength > MAX_CONTRIBUTORS) revert LAWPComplianceEngine_ArrayTooLarge();
 
         // 1. Verify exact 100% allocation
-        uint256 totalBPS = 0;
-        for (uint256 i = 0; i < contributorsLength;) {
-            totalBPS += _bpsShares[i];
+        _validateBPS(_bpsShares, contributorsLength);
 
-            unchecked {
-                ++i;
-            }
-        }
-        if (totalBPS != TOTAL_BPS) revert LAWPComplianceEngine_InvalidBPS();
-
+        // Effects: Register Pool and transfer funds before minting
         // 2. Math & Fee Deduction
-        uint256 riskFee = (_grossAmount * riskFeeBPS) / TOTAL_BPS;
-        uint256 netCapital = _grossAmount - riskFee;
+        (uint256 riskFee, uint256 netCapital) = _computeFees(_grossAmount);
 
-        // 3. Effects: Register Pool and Mint fractional bearer assets (CEI: State changes first)
-        pools[_poolId] = Pool({ exists: true, createdAt: block.timestamp });
-        emit PoolCreated(_poolId, block.timestamp);
-        emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
-
-        for (uint256 i = 0; i < contributorsLength;) {
-            uint256 userNetPrincipal = (netCapital * _bpsShares[i]) / TOTAL_BPS;
-            impactToken.mint(_contributors[i], userNetPrincipal, _bpsShares[i], _poolId);
-
-            unchecked {
-                ++i;
-            }
-        }
-
-        // 4. Interactions: Atomic Pull -> Vault -> Route Fee
+        // Interactions: Pull funds first, then mint shares to contributors based on net capital after fees
+        // 3. Pull total gross amount from sender to Treasury
         cngnToken.safeTransferFrom(msg.sender, address(treasury), _grossAmount);
         if (riskFee > 0) treasury.routeRiskFee(riskFee);
+        emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
+
+        // 4. Mint shares to contributors based on net capital after fees
+        _mintContributorShares(_poolId, netCapital, _contributors, _bpsShares, contributorsLength);
 
         emit CapitalPooled(_poolId, _grossAmount, riskFee);
     }
@@ -214,7 +188,7 @@ contract LAWPComplianceEngine is
             // System 1: 30% Collective, 50% LA2, 20% MVI1
             uint256 la2Split = (_totalAmount * 5000) / TOTAL_BPS;
             uint256 colSplit = (_totalAmount * 3000) / TOTAL_BPS;
-            uint256 mviSplit = _totalAmount - (la2Split - colSplit); // Math corrected: Safe dust prevention
+            uint256 mviSplit = _totalAmount - la2Split - colSplit;
 
             poolYieldTracker[_poolId] += colSplit;
             treasury.executeTransfer(la2, la2Split);
@@ -233,7 +207,7 @@ contract LAWPComplianceEngine is
             uint256 la2Split = (_totalAmount * 5500) / TOTAL_BPS;
             uint256 mviSplit = (_totalAmount * 2500) / TOTAL_BPS;
             uint256 colSplit = (_totalAmount * 1000) / TOTAL_BPS;
-            uint256 devSplit = _totalAmount - colSplit - (la2Split - mviSplit); // Math corrected: Safe dust prevention
+            uint256 devSplit = _totalAmount - la2Split - mviSplit - colSplit;
 
             poolYieldTracker[_poolId] += colSplit;
             treasury.executeTransfer(la2, la2Split);
@@ -252,17 +226,17 @@ contract LAWPComplianceEngine is
 
     /// @inheritdoc ILAWPComplianceEngine
     function claimYield(uint256 _tokenId) external override nonReentrant {
+        // 1. Load token data
         LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
 
-        // 1. Calculate claimable Continuous Yield (Safe subtraction to prevent silent underflows)
+        // 2. Calculate claimable Continuous Yield
         uint256 totalYieldForToken = (poolYieldTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;
+        uint256 claimableYield = totalYieldForToken > yieldClaimed[_tokenId]
+            ? totalYieldForToken - yieldClaimed[_tokenId]
+            : 0;
 
-        uint256 claimableYield = 
-            totalYieldForToken > yieldClaimed[_tokenId] ? totalYieldForToken - yieldClaimed[_tokenId] : 0;
-
-        // 2. Calculate claimable RoC (Strictly capped at netPrincipal)
+        // 3. Calculate claimable RoC (strictly capped at netPrincipal)
         uint256 totalRocForToken = (poolRocTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;
-        
         uint256 claimableRoc =
             totalRocForToken > data.rocReturned ? totalRocForToken - data.rocReturned : 0;
 
@@ -272,9 +246,9 @@ contract LAWPComplianceEngine is
         }
 
         uint256 totalClaim = claimableYield + claimableRoc;
-        if (totalClaim == 0) revert LAWPTreasury_YieldAlreadyClaimed();
+        if (totalClaim == 0) revert LAWPComplianceEngine_NothingToClaim();
 
-        // 3. Effects (State Updates)
+        // 4. Effects: Update all state BEFORE any external calls
         if (claimableYield > 0) {
             yieldClaimed[_tokenId] += claimableYield;
         }
@@ -282,8 +256,7 @@ contract LAWPComplianceEngine is
             impactToken.updateRocReturned(_tokenId, claimableRoc);
         }
 
-        // 4. Interactions (Transfer)
-        // Fetch current owner. Uses low-level call approach if called via Interception Hook
+        // 5. Interactions: Transfer funds LAST
         address owner = impactToken.ownerOf(_tokenId);
         treasury.executeTransfer(owner, totalClaim);
 
@@ -310,5 +283,63 @@ contract LAWPComplianceEngine is
         }
 
         return claimableYield + claimableRoc;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Verifies contributor BPS shares sum exactly to TOTAL_BPS.
+    /// @dev Extracted to relieve the outer frame of `totalBPS` and the loop counter `i`.
+    function _validateBPS(uint256[] calldata _bpsShares, uint256 _contributorsLength)
+        internal
+        pure
+    {
+        uint256 totalBPS;
+        for (uint256 i; i < _contributorsLength;) {
+            totalBPS += _bpsShares[i];
+            unchecked {
+                ++i;
+            }
+        }
+        if (totalBPS != TOTAL_BPS) revert LAWPComplianceEngine_InvalidBPS();
+    }
+
+    /// @notice Computes risk fee and net capital from gross amount.
+    /// @dev Named return values avoid two additional stack slots in the caller.
+    function _computeFees(uint256 _grossAmount)
+        internal
+        view
+        returns (uint256 riskFee, uint256 netCapital)
+    {
+        riskFee = (_grossAmount * riskFeeBPS) / TOTAL_BPS;
+        netCapital = _grossAmount - riskFee;
+    }
+
+    /// @notice Mints fractional bearer tokens to each contributor.
+    /// @dev Extracted to relieve the outer frame of `netCapital` and the loop counter `i`.  Called only after treasury has received funds (CEI: Interactions -> mint is the last external call).
+    function _mintContributorShares(
+        uint256 _poolId,
+        uint256 _netCapital,
+        address[] calldata _contributors,
+        uint256[] calldata _bpsShares,
+        uint256 _contributorsLength
+    ) internal {
+        uint256 remainingCapital = _netCapital;
+        uint256 lastIndex = _contributorsLength - 1;
+
+        for (uint256 i; i < _contributorsLength;) {
+            if (i == lastIndex) {
+                // Last contributor gets everything remaining to eliminate zero dust
+                impactToken.mint(_contributors[i], remainingCapital, _bpsShares[i], _poolId);
+            } else {
+                uint256 userNetPrincipal = (_netCapital * _bpsShares[i]) / TOTAL_BPS;
+                remainingCapital -= userNetPrincipal;
+                impactToken.mint(_contributors[i], userNetPrincipal, _bpsShares[i], _poolId);
+            }
+            unchecked {
+                ++i;
+            }
+        }
     }
 }
