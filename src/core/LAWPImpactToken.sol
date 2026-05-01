@@ -25,7 +25,11 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     uint256 private _nextTokenId = 1;
+
+    /// @notice The LAWPComplianceEngine contract that controls minting, updates, and claims. Critical for enforcing invariants and preventing double-spend exploits.
     address public complianceEngine;
+
+    /// @notice The base URI for all token metadata. Since all unique data is onchain, this is a static URI pointing to a generic JSON schema on IPFS that can be used for all tokens.
     string public baseTokenURI;
 
     mapping(uint256 => LAWPStructs.TokenData) private _tokenData;

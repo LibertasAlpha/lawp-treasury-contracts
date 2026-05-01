@@ -11,10 +11,17 @@ import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 contract LAWPActorRegistry is Ownable2Step {
     error LAWPActorRegistry_ZeroAddress();
 
+    /// @notice LA2 (Project Management) wallet address responsible for overseeing project execution and coordination.
     address public la2Wallet;
+
+    /// @notice MVI1 (System Treasury) wallet address responsible for receiving protocol fees and managing treasury funds.
     address public mvi1Wallet;
+
+    /// @notice Risk Management Pool wallet address responsible for holding funds allocated for risk mitigation and coverage.
     address public riskPoolWallet;
-    address public devWallet; // For the 10% DApp Team split
+
+    /// @notice DApp Team (Dev) wallet address responsible for receiving development funds and managing technical operations.
+    address public devWallet;
 
     event ActorUpdated(string role, address oldAddress, address newAddress);
 

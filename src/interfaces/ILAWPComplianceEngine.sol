@@ -23,6 +23,9 @@ interface ILAWPComplianceEngine {
     /// @notice Emitted when a new contribution is processed and the risk fee is deducted.
     event CapitalPooled(uint256 indexed poolId, uint256 grossAmount, uint256 riskFeeDeducted);
 
+    /// @notice Emitted when a new project pool is created.
+    event PoolCreated(uint256 indexed poolId, uint256 timestamp);
+
     /// @notice Emitted when the Multi-Sig triggers a validated revenue distribution.
     event RevenueRouted(uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount);
 
@@ -62,6 +65,10 @@ interface ILAWPComplianceEngine {
     /// @notice Allows a token holder to pull their accrued fractional share (Pull-over-Push pattern).
     /// @param tokenId The ID of the ERC-721 Impact Token.
     function claimYield(uint256 tokenId) external;
+
+    /// @notice Gas-optimized batch claim for multi-token holders.
+    /// @param tokenIds Array of ERC-721 Impact Token IDs owned by the caller.
+    function claimYieldBatch(uint256[] calldata tokenIds) external;
 
     /// @notice Calculates the total proportional yield currently available for a specific token.
     /// @param tokenId The ID of the ERC-721 Impact Token.

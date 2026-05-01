@@ -22,6 +22,8 @@ interface LAWPErrors {
     error LAWPComplianceEngine_InvalidActor();
     error LAWPComplianceEngine_ArrayTooLarge();
     error LAWPComplianceEngine_NothingToClaim();
+    error LAWPComplianceEngine_BatchTooLarge();
+    error LAWPComplianceEngine_NotTokenOwner(uint256 tokenId);
 
     /*//////////////////////////////////////////////////////////////
                             TREASURY ERRORS
@@ -53,4 +55,12 @@ interface LAWPErrors {
     error LAWPMultiSigController_BelowThreshold();
     error LAWPMultiSigController_ProposalAlreadyExecuted();
     error LAWPMultiSigController_InvalidPayload();
+    error LAWPMultiSigController_NotASigner();
+    error LAWPMultiSigController_InvalidSignerOrder();
+    error LAWPMultiSigController_InvalidThreshold();
+    error LAWPMultiSigController_SignerAlreadyExists();
+    error LAWPMultiSigController_Expired();
+    error LAWPMultiSigController_TooManySigners();
+    error LAWPMultiSigController_InvalidSignatureLength();
+    error LAWPMultiSigController_ZeroAddress();
 }

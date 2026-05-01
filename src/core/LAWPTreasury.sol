@@ -19,8 +19,14 @@ contract LAWPTreasury is ILAWPTreasury, LAWPErrors, Ownable2Step, ReentrancyGuar
     /*//////////////////////////////////////////////////////////////
                               STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice The ERC20 token used for all deposits, fees, and yield distributions (e.g., CNGN).
     IERC20 public immutable cngnToken;
+
+    /// @notice The LAWPComplianceEngine contract that controls minting, updates, and claims. Critical for enforcing invariants and preventing double-spend exploits.
     address public complianceEngine;
+
+    /// @notice Risk Management Pool wallet address responsible for holding funds allocated for risk mitigation and coverage.
     address public riskPoolWallet;
 
     /*//////////////////////////////////////////////////////////////
