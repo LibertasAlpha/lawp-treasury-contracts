@@ -13,7 +13,7 @@ import { LAWPErrors } from "../../src/libraries/LAWPErrors.sol";
 
 contract LAWPMultiSigControllerTest is Test, LAWPErrors {
     LAWPMultiSigController public controller;
-    
+
     // Real Ecosystem Integration
     LAWPComplianceEngine public engine;
     LAWPTreasury public treasury;
@@ -23,13 +23,13 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
     MockAdminOperations public adminOps;
 
     address public admin = address(1);
-    
+
     // Operational Wallets
     address public la2Wallet = address(11);
     address public mvi1Wallet = address(12);
     address public riskPoolWallet = address(13);
     address public devWallet = address(14);
-    
+
     // Signer Private Keys
     uint256 public pk1 = 0xA11CE;
     uint256 public pk2 = 0xB0B;
@@ -107,7 +107,8 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_Constructor_RevertIf_InvalidThreshold() public {
         address[] memory signers = new address[](2);
-        signers[0] = signer1; signers[1] = signer2;
+        signers[0] = signer1;
+        signers[1] = signer2;
 
         // Threshold 0
         vm.expectRevert(LAWPMultiSigController_InvalidThreshold.selector);
@@ -116,7 +117,7 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
         // Threshold > length
         vm.expectRevert(LAWPMultiSigController_InvalidThreshold.selector);
         new LAWPMultiSigController(admin, address(engine), signers, 3);
-        
+
         // Empty signers array
         address[] memory emptySigners = new address[](0);
         vm.expectRevert(LAWPMultiSigController_InvalidThreshold.selector);
@@ -125,7 +126,7 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_Constructor_RevertIf_TooManySigners() public {
         address[] memory manySigners = new address[](21); // Max is 20
-        for(uint256 i = 0; i < 21; i++) {
+        for (uint256 i = 0; i < 21; i++) {
             manySigners[i] = address(uint160(100 + i));
         }
         vm.expectRevert(LAWPMultiSigController_TooManySigners.selector);
@@ -134,7 +135,7 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_Constructor_RevertIf_InvalidSignerOrDuplicate() public {
         address[] memory signers = new address[](2);
-        signers[0] = signer1; 
+        signers[0] = signer1;
         signers[1] = address(0);
 
         vm.expectRevert(LAWPMultiSigController_InvalidSignatures.selector);
@@ -174,11 +175,12 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
         // Test MAX_SIGNERS
         address[] memory manySigners = new address[](20);
-        for(uint256 i = 0; i < 20; i++) {
+        for (uint256 i = 0; i < 20; i++) {
             manySigners[i] = address(uint160(100 + i));
         }
-        LAWPMultiSigController hugeController = new LAWPMultiSigController(admin, address(engine), manySigners, 2);
-        
+        LAWPMultiSigController hugeController =
+            new LAWPMultiSigController(admin, address(engine), manySigners, 2);
+
         vm.prank(admin);
         vm.expectRevert(LAWPMultiSigController_TooManySigners.selector);
         hugeController.addSigner(address(0x999));
@@ -223,7 +225,11 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
                            EXECUTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function _getSortedSignatures(uint256 _pkA, uint256 _pkB, bytes32 _digest) internal pure returns (bytes memory) {
+    function _getSortedSignatures(uint256 _pkA, uint256 _pkB, bytes32 _digest)
+        internal
+        pure
+        returns (bytes memory)
+    {
         address addrA = vm.addr(_pkA);
         address addrB = vm.addr(_pkB);
 
@@ -251,7 +257,7 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
         controller.executeProposal(proposalId, poolId, amount, flow, deadline, sigs);
 
         assertTrue(controller.executedProposals(digest));
-        
+
         // INTEGRATION CHECK: Verify the Engine successfully pulled funds from the Treasury
         // For GRANT_INITIAL (100,000e6): 50% goes to LA2 (50,000e6), 30% to Collective Yield Tracker
         assertEq(cngn.balanceOf(la2Wallet), la2BalBefore + 50_000e6);
@@ -272,7 +278,7 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_ExecuteProposal_RevertIf_InvalidSignatureLength() public {
         uint256 deadline = block.timestamp + 1 hours;
-        
+
         // Too short
         bytes memory shortSig = new bytes(64);
         vm.expectRevert(LAWPMultiSigController_InvalidSignatureLength.selector);
@@ -288,7 +294,8 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
         uint256 proposalId = 1;
         uint256 deadline = block.timestamp + 1 hours;
 
-        bytes32 digest = controller.getProposalDigest(proposalId, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
+        bytes32 digest =
+            controller.getProposalDigest(proposalId, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
         bytes memory sigs = _getSortedSignatures(pk1, pk2, digest);
 
         controller.executeProposal(proposalId, 1, 1000, LAWPStructs.FlowType.RoC, deadline, sigs);
@@ -300,7 +307,8 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_ExecuteProposal_RevertIf_UnorderedOrDuplicateSignatures() public {
         uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
+        bytes32 digest =
+            controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
 
         // Duplicate
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk1, digest);
@@ -324,7 +332,8 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_ExecuteProposal_RevertIf_NotASigner() public {
         uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
+        bytes32 digest =
+            controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
 
         uint256 maliciousPk = 0xBAD; // Not a registered board member
         bytes memory sigs = _getSortedSignatures(pk1, maliciousPk, digest);
@@ -339,7 +348,8 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_ExecuteProposal_Success_WithNormalizedV() public {
         uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
+        bytes32 digest =
+            controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
 
         address addrA = vm.addr(pk1);
         address addrB = vm.addr(pk2);
@@ -358,14 +368,15 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
         // Should successfully normalize V and execute
         controller.executeProposal(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline, sigs);
         assertTrue(controller.executedProposals(digest));
-        
+
         // Integration Check: RoC simply adds to the ledger, no treasury transfer occurs
         assertEq(engine.poolRocTracker(1), 1000);
     }
 
     function test_ExecuteProposal_RevertIf_InvalidV() public {
         uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
+        bytes32 digest =
+            controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
 
         (, bytes32 r1, bytes32 s1) = vm.sign(pk1, digest);
         (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(pk2, digest);
@@ -379,7 +390,8 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
 
     function test_ExecuteProposal_RevertIf_MalleableS() public {
         uint256 deadline = block.timestamp + 1 hours;
-        bytes32 digest = controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
+        bytes32 digest =
+            controller.getProposalDigest(1, 1, 1000, LAWPStructs.FlowType.RoC, deadline);
         bytes memory sigs;
 
         {
@@ -387,7 +399,8 @@ contract LAWPMultiSigControllerTest is Test, LAWPErrors {
             (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(pk2, digest);
 
             // Mutate s to the upper half of the secp256k1 curve
-            uint256 malleableS = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 - uint256(s1);
+            uint256 malleableS =
+                0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141 - uint256(s1);
             uint8 malleableV = v1 == 27 ? 28 : 27;
 
             sigs = abi.encodePacked(r1, bytes32(malleableS), malleableV, r2, s2, v2);

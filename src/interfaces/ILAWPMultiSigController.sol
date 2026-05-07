@@ -7,7 +7,6 @@ import { LAWPStructs } from "../libraries/LAWPStructs.sol";
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Interface for the off-chain verification and execution engine.
 interface ILAWPMultiSigController {
-    
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -24,9 +23,9 @@ interface ILAWPMultiSigController {
     /// @notice Emitted when a multi-sig proposal is successfully executed.
     event ProposalExecuted(
         bytes32 indexed digest,
-        uint256 indexed proposalId, 
-        uint256 indexed poolId, 
-        uint256 totalAmount, 
+        uint256 indexed proposalId,
+        uint256 indexed poolId,
+        uint256 totalAmount,
         LAWPStructs.FlowType flowType
     );
 

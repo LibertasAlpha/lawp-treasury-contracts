@@ -49,12 +49,7 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
         // 3. Deploy Engine (10% Risk Fee = 1000 BPS)
         engine = new LAWPComplianceEngine(
-            admin,
-            address(treasury),
-            address(impactToken),
-            address(registry),
-            address(cngn),
-            1000
+            admin, address(treasury), address(impactToken), address(registry), address(cngn), 1000
         );
 
         // 4. Link Systems
@@ -81,24 +76,36 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
     function test_Constructor_RevertIf_ZeroAddresses() public {
         vm.expectRevert(LAWPComplianceEngine_ZeroAddress.selector);
-        new LAWPComplianceEngine(admin, address(0), address(impactToken), address(registry), address(cngn), 1000);
+        new LAWPComplianceEngine(
+            admin, address(0), address(impactToken), address(registry), address(cngn), 1000
+        );
 
         vm.expectRevert(LAWPComplianceEngine_ZeroAddress.selector);
-        new LAWPComplianceEngine(admin, address(treasury), address(0), address(registry), address(cngn), 1000);
+        new LAWPComplianceEngine(
+            admin, address(treasury), address(0), address(registry), address(cngn), 1000
+        );
 
         vm.expectRevert(LAWPComplianceEngine_ZeroAddress.selector);
-        new LAWPComplianceEngine(admin, address(treasury), address(impactToken), address(0), address(cngn), 1000);
+        new LAWPComplianceEngine(
+            admin, address(treasury), address(impactToken), address(0), address(cngn), 1000
+        );
 
         vm.expectRevert(LAWPComplianceEngine_ZeroAddress.selector);
-        new LAWPComplianceEngine(admin, address(treasury), address(impactToken), address(registry), address(0), 1000);
+        new LAWPComplianceEngine(
+            admin, address(treasury), address(impactToken), address(registry), address(0), 1000
+        );
     }
 
     function test_Constructor_RevertIf_InvalidRiskFee() public {
         vm.expectRevert(LAWPComplianceEngine_InvalidRiskFee.selector);
-        new LAWPComplianceEngine(admin, address(treasury), address(impactToken), address(registry), address(cngn), 0);
+        new LAWPComplianceEngine(
+            admin, address(treasury), address(impactToken), address(registry), address(cngn), 0
+        );
 
         vm.expectRevert(LAWPComplianceEngine_InvalidRiskFee.selector);
-        new LAWPComplianceEngine(admin, address(treasury), address(impactToken), address(registry), address(cngn), 1001);
+        new LAWPComplianceEngine(
+            admin, address(treasury), address(impactToken), address(registry), address(cngn), 1001
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -146,7 +153,7 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
         vm.prank(userA);
         vm.expectRevert();
-        engine.emergencyPause(); 
+        engine.emergencyPause();
 
         vm.prank(admin);
         engine.unpause();
@@ -161,8 +168,10 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
         vm.prank(multiSig);
         engine.emergencyPause();
 
-        address[] memory users = new address[](1); users[0] = userA;
-        uint256[] memory bps = new uint256[](1); bps[0] = 10000;
+        address[] memory users = new address[](1);
+        users[0] = userA;
+        uint256[] memory bps = new uint256[](1);
+        bps[0] = 10000;
 
         vm.prank(coordinator);
         vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
@@ -170,20 +179,24 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
     }
 
     function test_ProcessPoolDeposit_RevertIf_PoolExists() public {
-        address[] memory users = new address[](1); users[0] = userA;
-        uint256[] memory bps = new uint256[](1); bps[0] = 10000;
+        address[] memory users = new address[](1);
+        users[0] = userA;
+        uint256[] memory bps = new uint256[](1);
+        bps[0] = 10000;
 
         vm.startPrank(coordinator);
         engine.processPoolDeposit(1, 100_000e6, users, bps);
-        
+
         vm.expectRevert(LAWPComplianceEngine_PoolAlreadyExists.selector);
         engine.processPoolDeposit(1, 100_000e6, users, bps);
         vm.stopPrank();
     }
 
     function test_ProcessPoolDeposit_RevertIf_InvalidAmount() public {
-        address[] memory users = new address[](1); users[0] = userA;
-        uint256[] memory bps = new uint256[](1); bps[0] = 10000;
+        address[] memory users = new address[](1);
+        users[0] = userA;
+        uint256[] memory bps = new uint256[](1);
+        bps[0] = 10000;
 
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine_InvalidAmount.selector);
@@ -191,11 +204,14 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
     }
 
     function test_ProcessPoolDeposit_RevertIf_ArrayMismatchOrTooLarge() public {
-        address[] memory users = new address[](2); users[0] = userA; users[1] = userB;
-        uint256[] memory bps = new uint256[](1); bps[0] = 10000;
+        address[] memory users = new address[](2);
+        users[0] = userA;
+        users[1] = userB;
+        uint256[] memory bps = new uint256[](1);
+        bps[0] = 10000;
 
         vm.startPrank(coordinator);
-        
+
         vm.expectRevert(LAWPComplianceEngine_ArrayMismatch.selector);
         engine.processPoolDeposit(1, 100_000e6, users, bps);
 
@@ -213,8 +229,12 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
     }
 
     function test_ProcessPoolDeposit_RevertIf_InvalidBPS() public {
-        address[] memory users = new address[](2); users[0] = userA; users[1] = userB;
-        uint256[] memory bps = new uint256[](2); bps[0] = 5000; bps[1] = 4999;
+        address[] memory users = new address[](2);
+        users[0] = userA;
+        users[1] = userB;
+        uint256[] memory bps = new uint256[](2);
+        bps[0] = 5000;
+        bps[1] = 4999;
 
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine_InvalidBPS.selector);
@@ -223,12 +243,16 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
     function test_ProcessPoolDeposit_Success_WithDust() public {
         uint256 depositAmt = 100_000e6;
-        
+
         address[] memory users = new address[](3);
-        users[0] = userA; users[1] = userB; users[2] = userC;
-        
+        users[0] = userA;
+        users[1] = userB;
+        users[2] = userC;
+
         uint256[] memory bps = new uint256[](3);
-        bps[0] = 3333; bps[1] = 3333; bps[2] = 3334;
+        bps[0] = 3333;
+        bps[1] = 3333;
+        bps[2] = 3334;
 
         uint256 vaultBalBefore = treasury.getVaultBalance();
 
@@ -264,16 +288,19 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
     function test_ValidateAndRoute_RevertIf_InvalidFlowType() public {
         vm.prank(multiSig);
-        (bool success, ) = address(engine).call(
-            abi.encodeWithSelector(engine.validateAndRoute.selector, 1, 10_000e6, 99)
-        );
+        (bool success,) = address(engine)
+            .call(abi.encodeWithSelector(engine.validateAndRoute.selector, 1, 10_000e6, 99));
         assertFalse(success, "Call should have reverted due to invalid enum");
     }
 
     function test_ValidateAndRoute_RevertIf_InvalidActor() public {
         // Mock the registry to return address(0) to simulate misconfiguration
-        vm.mockCall(address(registry), abi.encodeWithSelector(registry.la2Wallet.selector), abi.encode(address(0)));
-        
+        vm.mockCall(
+            address(registry),
+            abi.encodeWithSelector(registry.la2Wallet.selector),
+            abi.encode(address(0))
+        );
+
         vm.startPrank(multiSig);
         vm.expectRevert(LAWPComplianceEngine_InvalidActor.selector);
         engine.validateAndRoute(1, 10_000e6, LAWPStructs.FlowType.GRANT_INITIAL);
@@ -284,7 +311,11 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
         // Clear mock and mock devWallet for continuous
         vm.clearMockedCalls();
-        vm.mockCall(address(registry), abi.encodeWithSelector(registry.devWallet.selector), abi.encode(address(0)));
+        vm.mockCall(
+            address(registry),
+            abi.encodeWithSelector(registry.devWallet.selector),
+            abi.encode(address(0))
+        );
         vm.prank(multiSig);
         vm.expectRevert(LAWPComplianceEngine_InvalidActor.selector);
         engine.validateAndRoute(1, 10_000e6, LAWPStructs.FlowType.GRANT_CONTINUOUS);
@@ -292,7 +323,7 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
     function test_ValidateAndRoute_Success() public {
         vm.startPrank(multiSig);
-        
+
         // RoC
         engine.validateAndRoute(1, 10_000e6, LAWPStructs.FlowType.RoC);
         assertEq(engine.poolRocTracker(1), 10_000e6);
@@ -300,7 +331,7 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
         // Grant Initial (30/50/20)
         uint256 la2Bal = cngn.balanceOf(la2Wallet);
         uint256 mvi1Bal = cngn.balanceOf(mvi1Wallet);
-        
+
         engine.validateAndRoute(1, 10_000e6, LAWPStructs.FlowType.GRANT_INITIAL);
         assertEq(engine.poolYieldTracker(1), 3_000e6); // 30%
         assertEq(cngn.balanceOf(la2Wallet), la2Bal + 5_000e6); // 50%
@@ -316,7 +347,7 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
         assertEq(cngn.balanceOf(la2Wallet), la2Bal + 5_500e6); // 55%
         assertEq(cngn.balanceOf(mvi1Wallet), mvi1Bal + 2_500e6); // 25%
         assertEq(cngn.balanceOf(devWallet), devBal + 1_000e6); // 10%
-        
+
         vm.stopPrank();
     }
 
@@ -325,18 +356,22 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
     //////////////////////////////////////////////////////////////*/
 
     function _setupStandardDeposit() internal {
-        address[] memory users = new address[](2); users[0] = userA; users[1] = userB;
-        uint256[] memory bps = new uint256[](2); bps[0] = 6000; bps[1] = 4000;
+        address[] memory users = new address[](2);
+        users[0] = userA;
+        users[1] = userB;
+        uint256[] memory bps = new uint256[](2);
+        bps[0] = 6000;
+        bps[1] = 4000;
         vm.prank(coordinator);
         engine.processPoolDeposit(1, 100_000e6, users, bps); // Net Capital = 90k
     }
 
     function test_ClaimYield_Success() public {
         _setupStandardDeposit();
-        
+
         vm.prank(multiSig);
         engine.validateAndRoute(1, 10_000e6, LAWPStructs.FlowType.RoC);
-        
+
         vm.prank(multiSig);
         engine.validateAndRoute(1, 10_000e6, LAWPStructs.FlowType.GRANT_INITIAL); // 3k yield to pool
 
@@ -384,10 +419,12 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
 
     function test_ClaimYieldBatch_Success_AndSkipsZeros() public {
         _setupStandardDeposit();
-        
+
         // Give UserA a second token in pool 2
-        address[] memory users = new address[](1); users[0] = userA;
-        uint256[] memory bps = new uint256[](1); bps[0] = 10000;
+        address[] memory users = new address[](1);
+        users[0] = userA;
+        uint256[] memory bps = new uint256[](1);
+        bps[0] = 10000;
         vm.prank(coordinator);
         engine.processPoolDeposit(2, 50_000e6, users, bps);
 
@@ -397,7 +434,8 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
         engine.validateAndRoute(1, 10_000e6, LAWPStructs.FlowType.RoC);
 
         uint256[] memory batch = new uint256[](2);
-        batch[0] = 1; batch[1] = 3;
+        batch[0] = 1;
+        batch[1] = 3;
 
         uint256 balanceBefore = cngn.balanceOf(userA);
         vm.prank(userA);
@@ -427,7 +465,7 @@ contract LAWPComplianceEngineTest is Test, LAWPErrors {
         _setupStandardDeposit();
         uint256[] memory batch = new uint256[](1);
         batch[0] = 1;
-        
+
         vm.prank(userA);
         vm.expectRevert(LAWPComplianceEngine_NothingToClaim.selector);
         engine.claimYieldBatch(batch);

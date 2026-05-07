@@ -52,8 +52,8 @@ contract LAWPComplianceEngine is
     uint256 public constant MAX_RISK_FEE = 1000;
 
     /// @notice Circuit Breaker: Maximum number of contributors allowed per pool deposit to prevent block gas limit DoS.
-    uint256 public constant MAX_CONTRIBUTORS = 20; 
-    
+    uint256 public constant MAX_CONTRIBUTORS = 20;
+
     /// @notice Circuit Breaker: Maximum number of tokens processed in a single batch claim to prevent block gas limit DoS.
     uint256 public constant MAX_BATCH_CLAIM = 20;
 
@@ -193,7 +193,7 @@ contract LAWPComplianceEngine is
         // 2. Math & Fee Deduction
         (uint256 riskFee, uint256 netCapital) = _computeFees(_grossAmount);
 
-        pools[_poolId] = Pool({exists: true, createdAt: block.timestamp});
+        pools[_poolId] = Pool({ exists: true, createdAt: block.timestamp });
         emit PoolCreated(_poolId, block.timestamp);
 
         // Interactions: Securely transfer funds and mint fractional equity.
@@ -225,7 +225,6 @@ contract LAWPComplianceEngine is
         if (_flowType == LAWPStructs.FlowType.RoC) {
             // 100% of this specific routed amount is assigned to the Return of Contribution tracker
             poolRocTracker[_poolId] += _totalAmount;
-            
         } else if (_flowType == LAWPStructs.FlowType.GRANT_INITIAL) {
             address la2 = registry.la2Wallet();
             if (la2 == address(0)) revert LAWPComplianceEngine_InvalidActor();
@@ -241,7 +240,6 @@ contract LAWPComplianceEngine is
             poolYieldTracker[_poolId] += colSplit;
             treasury.executeTransfer(la2, la2Split);
             treasury.executeTransfer(mvi, mviSplit);
-            
         } else if (_flowType == LAWPStructs.FlowType.GRANT_CONTINUOUS) {
             address la2 = registry.la2Wallet();
             if (la2 == address(0)) revert LAWPComplianceEngine_InvalidActor();
@@ -262,7 +260,6 @@ contract LAWPComplianceEngine is
             treasury.executeTransfer(la2, la2Split);
             treasury.executeTransfer(mvi, mviSplit);
             treasury.executeTransfer(devWallet, devSplit);
-            
         } else {
             revert LAWPComplianceEngine_InvalidFlowType();
         }
@@ -277,7 +274,7 @@ contract LAWPComplianceEngine is
     /// @inheritdoc ILAWPComplianceEngine
     function claimYield(uint256 _tokenId) external override nonReentrant {
         address owner = impactToken.ownerOf(_tokenId);
-        
+
         uint256 totalClaim = _claimYieldForToken(_tokenId, owner);
         if (totalClaim == 0) revert LAWPComplianceEngine_NothingToClaim();
 
@@ -289,24 +286,26 @@ contract LAWPComplianceEngine is
     function claimYieldBatch(uint256[] calldata _tokenIds) external override nonReentrant {
         uint256 length = _tokenIds.length;
         if (length > MAX_BATCH_CLAIM) revert LAWPComplianceEngine_BatchTooLarge();
-        
+
         uint256 aggregateClaim;
-        
+
         for (uint256 i; i < length;) {
             uint256 tokenId = _tokenIds[i];
-            
+
             // Ownership validation: Enforce that the caller owns every token in the batch
             address owner = impactToken.ownerOf(tokenId);
             if (owner != msg.sender) revert LAWPComplianceEngine_NotTokenOwner(tokenId);
 
             // Compute claimable amount and securely update token state
             aggregateClaim += _claimYieldForToken(tokenId, owner);
-            
-            unchecked { ++i; }
+
+            unchecked {
+                ++i;
+            }
         }
-        
+
         if (aggregateClaim == 0) revert LAWPComplianceEngine_NothingToClaim();
-        
+
         // Single aggregated external transfer to optimize gas
         treasury.executeTransfer(msg.sender, aggregateClaim);
     }
@@ -316,7 +315,7 @@ contract LAWPComplianceEngine is
         // ============================================================================
         // O(1) CUMULATIVE MATH ENGINE (Read-Only)
         // ----------------------------------------------------------------------------
-        // Mirrors the math in `_claimYieldForToken` explicitly, serving solely as a 
+        // Mirrors the math in `_claimYieldForToken` explicitly, serving solely as a
         // read-only getter for frontends. See `_claimYieldForToken` for math breakdown.
         // ============================================================================
         LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
@@ -347,35 +346,37 @@ contract LAWPComplianceEngine is
     /// @param _tokenId The specific ID of the Impact Token.
     /// @param _owner The explicitly pre-fetched owner of the token to guarantee correct event emission.
     /// @return claimable The aggregate CNGN amount owed to the token.
-    function _claimYieldForToken(uint256 _tokenId, address _owner) internal returns (uint256 claimable) {
+    function _claimYieldForToken(uint256 _tokenId, address _owner)
+        internal
+        returns (uint256 claimable)
+    {
         // ============================================================================
         // O(1) CUMULATIVE MATH ENGINE
         // ----------------------------------------------------------------------------
-        // Instead of looping to calculate yield on every transaction, we track the 
-        // ALL-TIME historical yield of the pool. A token's claimable amount is its 
+        // Instead of looping to calculate yield on every transaction, we track the
+        // ALL-TIME historical yield of the pool. A token's claimable amount is its
         // lifetime slice of that all-time yield, minus what it has already claimed.
         //
         // YIELD MATH: (Historical Pool Yield * Token BPS / 100%) - Already Claimed Yield
         // ROC MATH: (Historical Pool RoC * Token BPS / 100%) - Already Claimed RoC
         //
         // CONTEXT FOR "ALREADY CLAIMED":
-        // - Already Claimed Yield: The running total of continuous yield this exact 
+        // - Already Claimed Yield: The running total of continuous yield this exact
         //   tokenId has successfully withdrawn in all past claim transactions.
-        // - Already Claimed RoC: The running total of RoC this exact tokenId has 
+        // - Already Claimed RoC: The running total of RoC this exact tokenId has
         //   successfully withdrawn in all past claim transactions (`data.rocReturned`).
         //
         // HARD CAP: RoC payout is strictly capped to never exceed `netPrincipal`.
         // Once a user gets their original investment back in full,
         // they stop receiving RoC payouts (but they keep earning Yield forever).
         // ============================================================================
-        
+
         LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
 
         // 1. Continuous Yield Calculation (O(1) Pro-Rata Math)
         uint256 totalYield = (poolYieldTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;
-        uint256 claimableYield = totalYield > yieldClaimed[_tokenId]
-            ? totalYield - yieldClaimed[_tokenId]
-            : 0;
+        uint256 claimableYield =
+            totalYield > yieldClaimed[_tokenId] ? totalYield - yieldClaimed[_tokenId] : 0;
 
         // 2. RoC Calculation (Strictly capped at net principal)
         uint256 totalRoc = (poolRocTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;

@@ -177,8 +177,14 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
 
         // If it is a transfer (not minting or burning) and the engine is linked
         if (from != address(0) && _to != address(0) && complianceEngine != address(0)) {
-            // Force flush of accumulated yield to the outgoing owner
-            ILAWPComplianceEngine(complianceEngine).claimYield(_tokenId);
+            // 1. Ask the engine exactly how much is owed to this specific token
+            uint256 pendingYield =
+                ILAWPComplianceEngine(complianceEngine).calculateProportionalYield(_tokenId);
+
+            // 2. Only force flush if there is actually money to claim (prevents NothingToClaim revert)
+            if (pendingYield > 0) {
+                ILAWPComplianceEngine(complianceEngine).claimYield(_tokenId);
+            }
         }
 
         return super._update(_to, _tokenId, _auth);
