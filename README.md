@@ -6,9 +6,9 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 **Additional documentation:**
 
-- [Threat Model]("https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/threat_model.md")
-- [Testing Invariants]("https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/invariants.md")
-- [Rekt Test Answers]("https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/rekt_test_answers.md")
+- [Threat Model](https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/threat_model.md)
+- [Testing Invariants](https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/invariants.md)
+- [Rekt Test Answers](https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/rekt_test_answers.md)
 
 ## Key Features
 

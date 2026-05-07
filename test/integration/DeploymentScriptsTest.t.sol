@@ -63,7 +63,7 @@ contract DeploymentScriptsTest is Test {
         // 1. Execute DeployMock
         uint256 nonceBeforeMock = vm.getNonce(deployer);
         deployMockScript.run();
-        
+
         // Deterministically predict CREATE addresses based on deployer nonce
         adminOpsAddr = vm.computeCreateAddress(deployer, nonceBeforeMock);
         cngnAddr = vm.computeCreateAddress(deployer, nonceBeforeMock + 1);
@@ -96,7 +96,7 @@ contract DeploymentScriptsTest is Test {
 
     function test_HappyPathDeploymentAndConfig() public {
         _executeDeployments();
-        
+
         // 3. Execute Configure
         configureScript.run();
 
@@ -134,19 +134,19 @@ contract DeploymentScriptsTest is Test {
 
     /// @dev Wraps vm.mockCall inside a snapshot to isolate state changes and trigger requires
     function _testRevertBranch(
-        address target, 
-        bytes memory callData, 
-        bytes memory retData, 
+        address target,
+        bytes memory callData,
+        bytes memory retData,
         string memory expectedRevertMsg,
         bool isPreFlight
     ) internal {
         // Upgraded to non-deprecated snapshot cheatcode
         uint256 snap = vm.snapshotState();
-        
+
         vm.mockCall(target, callData, retData);
         vm.expectRevert(bytes(expectedRevertMsg));
         configureScript.run(); // Will hit the mocked call and fail the specific require() branch
-        
+
         // Pre-flight checks revert BEFORE the script can call vm.stopBroadcast().
         // Post-flight checks revert AFTER the script has already called vm.stopBroadcast().
         if (isPreFlight) {
@@ -165,11 +165,37 @@ contract DeploymentScriptsTest is Test {
         bytes memory zeroAddressRet = abi.encode(address(0));
 
         // Force every PreFlight branch to fail and revert (broadcast is still hanging)
-        _testRevertBranch(registryAddr, pendingOwnerCall, zeroAddressRet, "PreFlight: Registry owner mismatch", true);
-        _testRevertBranch(treasuryAddr, pendingOwnerCall, zeroAddressRet, "PreFlight: Treasury owner mismatch", true);
-        _testRevertBranch(impactTokenAddr, pendingOwnerCall, zeroAddressRet, "PreFlight: Token owner mismatch", true);
-        _testRevertBranch(engineAddr, pendingOwnerCall, zeroAddressRet, "PreFlight: Engine owner mismatch", true);
-        _testRevertBranch(multiSigAddr, pendingOwnerCall, zeroAddressRet, "PreFlight: MultiSig owner mismatch", true);
+        _testRevertBranch(
+            registryAddr,
+            pendingOwnerCall,
+            zeroAddressRet,
+            "PreFlight: Registry owner mismatch",
+            true
+        );
+        _testRevertBranch(
+            treasuryAddr,
+            pendingOwnerCall,
+            zeroAddressRet,
+            "PreFlight: Treasury owner mismatch",
+            true
+        );
+        _testRevertBranch(
+            impactTokenAddr,
+            pendingOwnerCall,
+            zeroAddressRet,
+            "PreFlight: Token owner mismatch",
+            true
+        );
+        _testRevertBranch(
+            engineAddr, pendingOwnerCall, zeroAddressRet, "PreFlight: Engine owner mismatch", true
+        );
+        _testRevertBranch(
+            multiSigAddr,
+            pendingOwnerCall,
+            zeroAddressRet,
+            "PreFlight: MultiSig owner mismatch",
+            true
+        );
     }
 
     function test_ConfigureBranches_PostFlight() public {
@@ -179,29 +205,45 @@ contract DeploymentScriptsTest is Test {
         bytes memory zeroAddressRet = abi.encode(address(0));
 
         // Force every PostFlight branch to fail and revert (broadcast is already closed)
-        _testRevertBranch(registryAddr, ownerCall, zeroAddressRet, "PostFlight: Registry handover failed", false);
-        _testRevertBranch(treasuryAddr, ownerCall, zeroAddressRet, "PostFlight: Treasury handover failed", false);
-        _testRevertBranch(impactTokenAddr, ownerCall, zeroAddressRet, "PostFlight: Token handover failed", false);
-        _testRevertBranch(engineAddr, ownerCall, zeroAddressRet, "PostFlight: Engine handover failed", false);
-        _testRevertBranch(multiSigAddr, ownerCall, zeroAddressRet, "PostFlight: MultiSig handover failed", false);
+        _testRevertBranch(
+            registryAddr, ownerCall, zeroAddressRet, "PostFlight: Registry handover failed", false
+        );
+        _testRevertBranch(
+            treasuryAddr, ownerCall, zeroAddressRet, "PostFlight: Treasury handover failed", false
+        );
+        _testRevertBranch(
+            impactTokenAddr, ownerCall, zeroAddressRet, "PostFlight: Token handover failed", false
+        );
+        _testRevertBranch(
+            engineAddr, ownerCall, zeroAddressRet, "PostFlight: Engine handover failed", false
+        );
+        _testRevertBranch(
+            multiSigAddr, ownerCall, zeroAddressRet, "PostFlight: MultiSig handover failed", false
+        );
 
-        _testRevertBranch(timelockAddr, abi.encodeWithSignature("getMinDelay()"), abi.encode(0), "PostFlight: Delay update failed", false);
+        _testRevertBranch(
+            timelockAddr,
+            abi.encodeWithSignature("getMinDelay()"),
+            abi.encode(0),
+            "PostFlight: Delay update failed",
+            false
+        );
 
         bytes32 DEFAULT_ADMIN_ROLE = 0x00;
         TimelockController tl = TimelockController(payable(timelockAddr));
 
         _testRevertBranch(
-            timelockAddr, 
-            abi.encodeWithSignature("hasRole(bytes32,address)", DEFAULT_ADMIN_ROLE, deployer), 
-            abi.encode(true), 
+            timelockAddr,
+            abi.encodeWithSignature("hasRole(bytes32,address)", DEFAULT_ADMIN_ROLE, deployer),
+            abi.encode(true),
             "PostFlight: Deployer retains God Mode!",
             false
         );
 
         _testRevertBranch(
-            timelockAddr, 
-            abi.encodeWithSignature("hasRole(bytes32,address)", tl.CANCELLER_ROLE(), deployer), 
-            abi.encode(true), 
+            timelockAddr,
+            abi.encodeWithSignature("hasRole(bytes32,address)", tl.CANCELLER_ROLE(), deployer),
+            abi.encode(true),
             "PostFlight: Deployer retains Canceller Mode!",
             false
         );
