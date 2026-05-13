@@ -16,6 +16,11 @@ build:
 format:
 	forge fmt
 
+slither: 
+	slither src/ \
+		--foundry-compile-all \
+		--exclude-dependencies \
+
 # ==============================================================================
 # TESTING & VERIFICATION
 # ==============================================================================

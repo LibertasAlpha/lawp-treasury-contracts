@@ -165,7 +165,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
     /// @param _to The destination address of the transfer (zero if burning).
     /// @param _tokenId The ID of the token being transferred.
     /// @param _auth The address initiating the transfer (for access control, if needed in future).
-    /// @return The address of the new owner after the transfer.
+    /// @return The address of the previous owner before the transfer.
     function _update(address _to, uint256 _tokenId, address _auth)
         internal
         virtual
@@ -173,7 +173,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
         nonReentrant
         returns (address)
     {
-        address from = _ownerOf(_tokenId);
+        address from = super._update(_to, _tokenId, _auth);
 
         // If it is a transfer (not minting or burning) and the engine is linked
         if (from != address(0) && _to != address(0) && complianceEngine != address(0)) {
@@ -187,6 +187,6 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
             }
         }
 
-        return super._update(_to, _tokenId, _auth);
+        return from;
     }
 }
