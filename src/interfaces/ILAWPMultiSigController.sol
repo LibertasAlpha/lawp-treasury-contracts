@@ -20,6 +20,11 @@ interface ILAWPMultiSigController {
     /// @notice Emitted when the required signature threshold is updated.
     event ThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
 
+    /// @notice Emitted to provide an exact audit trail of which Relayer executed which Injector wallet.
+    event InjectorUsed(
+        uint256 indexed proposalId, address indexed injector, address indexed relayer
+    );
+
     /// @notice Emitted when a multi-sig proposal is successfully executed.
     event ProposalExecuted(
         bytes32 indexed digest,
@@ -35,6 +40,8 @@ interface ILAWPMultiSigController {
 
     /// @notice Executes a revenue routing proposal after validating a threshold of off-chain signatures.
     /// @dev Implements Safe-style packed ECDSA signatures. Reverts if signatures are duplicated or unordered.
+    /// Requires M-of-N threshold. Enforces nonce-based replay protection.
+    /// If successful, calls `engine.routeOperationalAllocation()`.
     /// @param proposalId Unique identifier/nonce for the proposal to track off-chain references.
     /// @param poolId The project deployment pool ID receiving the revenue.
     /// @param totalAmount The total CNGN generated off-chain to be routed.

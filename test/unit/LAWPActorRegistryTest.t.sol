@@ -4,94 +4,226 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { LAWPActorRegistry } from "../../src/core/LAWPActorRegistry.sol";
 
-/*
- * ============================================================================
- * @dev NOTE FOR PHASE 6 DEPLOYMENT (Invariant Testing)
- * ============================================================================
- * Finding: Incomplete Privilege Revocation During Deployment
- * Severity: Medium
- * * Description:
- * The constructor pattern atomically sets the Timelock as `owner` of governed
- * contracts. However, the Timelock itself is deployed with the deployer EOA
- * as `DEFAULT_ADMIN_ROLE`. Unless explicit revocation occurs, the deployer
- * retains ultimate control over the Timelock's role management.
- * * Recommendation:
- * The deployment script MUST include, in a single atomic transaction:
- * 1. Deploy Timelock
- * 2. Deploy governed contracts with Timelock as `initialAdmin`
- * 3. Call `timelock.renounceRole(DEFAULT_ADMIN_ROLE, deployer)`
- * * Validation:
- * Add invariant test confirming `timelock.getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 0`
- * after Phase 6 completion.
- * ============================================================================
- */
-
+/// @title LAWPActorRegistryTest
+/// @notice Unit tests for LAWPActorRegistry — the centralized operational wallet directory.
+/// @dev Tests: ownership model, wallet updates, zero-address guards, event emissions,
+///      two-step ownership transfer, and renounce lockout.
 contract LAWPActorRegistryTest is Test {
     LAWPActorRegistry public registry;
+
     address public admin = address(1);
-    address public la2 = address(2);
-    address public mvi1 = address(3);
-    address public riskPool = address(4);
+    address public la2 = address(10);
+    address public mvi1 = address(11);
+    address public riskPool = address(12);
+    address public dev = address(13);
+    address public newAdmin = address(99);
+    address public nobody = address(50);
+
+    event ActorUpdated(string role, address indexed oldAddress, address indexed newAddress);
 
     function setUp() public {
         registry = new LAWPActorRegistry(admin);
     }
 
-    function test_InitialAdminIsSet() public view {
+    /*//////////////////////////////////////////////////////////////
+                          CONSTRUCTOR TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Constructor_SetsOwner() public view {
         assertEq(registry.owner(), admin);
     }
 
-    function test_SetLA2Wallet() public {
+    function test_Constructor_WalletsInitiallyZero() public view {
+        assertEq(registry.la2Wallet(), address(0));
+        assertEq(registry.mvi1Wallet(), address(0));
+        assertEq(registry.riskPoolWallet(), address(0));
+        assertEq(registry.devWallet(), address(0));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         WALLET SETTER TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetLA2Wallet_Success() public {
         vm.prank(admin);
         registry.setLA2Wallet(la2);
         assertEq(registry.la2Wallet(), la2);
     }
 
-    function test_SetMVI1Wallet() public {
+    function test_SetMVI1Wallet_Success() public {
         vm.prank(admin);
         registry.setMVI1Wallet(mvi1);
         assertEq(registry.mvi1Wallet(), mvi1);
     }
 
-    function test_SetRiskPoolWallet() public {
+    function test_SetRiskPoolWallet_Success() public {
         vm.prank(admin);
         registry.setRiskPoolWallet(riskPool);
         assertEq(registry.riskPoolWallet(), riskPool);
     }
 
-    function test_RevertIf_NotAdminUpdates() public {
-        vm.prank(address(99));
-        vm.expectRevert(); // OZ OwnableUnauthorizedAccount
+    function test_SetDevWallet_Success() public {
+        vm.prank(admin);
+        registry.setDevWallet(dev);
+        assertEq(registry.devWallet(), dev);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       EVENT EMISSION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetLA2Wallet_EmitsActorUpdated() public {
+        vm.prank(admin);
+        vm.expectEmit(false, true, true, true);
+        emit ActorUpdated("LA2", address(0), la2);
         registry.setLA2Wallet(la2);
     }
 
-    function test_RevertIf_ZeroAddressSet() public {
+    function test_SetMVI1Wallet_EmitsActorUpdated() public {
+        vm.prank(admin);
+        vm.expectEmit(false, true, true, true);
+        emit ActorUpdated("MVI1", address(0), mvi1);
+        registry.setMVI1Wallet(mvi1);
+    }
+
+    function test_SetRiskPoolWallet_EmitsActorUpdated() public {
+        vm.prank(admin);
+        vm.expectEmit(false, true, true, true);
+        emit ActorUpdated("RISK_POOL", address(0), riskPool);
+        registry.setRiskPoolWallet(riskPool);
+    }
+
+    function test_SetDevWallet_EmitsActorUpdated() public {
+        vm.prank(admin);
+        vm.expectEmit(false, true, true, true);
+        emit ActorUpdated("DEV", address(0), dev);
+        registry.setDevWallet(dev);
+    }
+
+    function test_SetLA2Wallet_EmitsPreviousAddress() public {
+        vm.startPrank(admin);
+        registry.setLA2Wallet(la2);
+
+        vm.expectEmit(false, true, true, true);
+        emit ActorUpdated("LA2", la2, address(99));
+        registry.setLA2Wallet(address(99));
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      ZERO-ADDRESS GUARD TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetLA2Wallet_RevertIf_ZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert(LAWPActorRegistry.LAWPActorRegistry_ZeroAddress.selector);
         registry.setLA2Wallet(address(0));
     }
 
-    function test_RevertIf_RenounceOwnership() public {
+    function test_SetMVI1Wallet_RevertIf_ZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(LAWPActorRegistry.LAWPActorRegistry_ZeroAddress.selector);
+        registry.setMVI1Wallet(address(0));
+    }
+
+    function test_SetRiskPoolWallet_RevertIf_ZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(LAWPActorRegistry.LAWPActorRegistry_ZeroAddress.selector);
+        registry.setRiskPoolWallet(address(0));
+    }
+
+    function test_SetDevWallet_RevertIf_ZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(LAWPActorRegistry.LAWPActorRegistry_ZeroAddress.selector);
+        registry.setDevWallet(address(0));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     AUTHORIZATION GUARD TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetLA2Wallet_RevertIf_NotOwner() public {
+        vm.prank(nobody);
+        vm.expectRevert();
+        registry.setLA2Wallet(la2);
+    }
+
+    function test_SetMVI1Wallet_RevertIf_NotOwner() public {
+        vm.prank(nobody);
+        vm.expectRevert();
+        registry.setMVI1Wallet(mvi1);
+    }
+
+    function test_SetRiskPoolWallet_RevertIf_NotOwner() public {
+        vm.prank(nobody);
+        vm.expectRevert();
+        registry.setRiskPoolWallet(riskPool);
+    }
+
+    function test_SetDevWallet_RevertIf_NotOwner() public {
+        vm.prank(nobody);
+        vm.expectRevert();
+        registry.setDevWallet(dev);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    OWNERSHIP PROTECTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RenounceOwnership_IsDisabled() public {
         vm.prank(admin);
         vm.expectRevert("LAWPActorRegistry: renounceOwnership is disabled");
         registry.renounceOwnership();
     }
 
-    function test_TwoStepOwnershipTransfer() public {
-        address newAdmin = address(5);
+    function test_TwoStepOwnershipTransfer_Success() public {
+        // Step 1: propose
+        vm.prank(admin);
+        registry.transferOwnership(newAdmin);
+        assertEq(registry.owner(), admin); // Not yet transferred
+        assertEq(registry.pendingOwner(), newAdmin);
 
-        // Step 1: Admin proposes new owner
+        // Step 2: accept
+        vm.prank(newAdmin);
+        registry.acceptOwnership();
+        assertEq(registry.owner(), newAdmin);
+        assertEq(registry.pendingOwner(), address(0));
+    }
+
+    function test_TwoStepOwnership_RevertIf_WrongAcceptor() public {
         vm.prank(admin);
         registry.transferOwnership(newAdmin);
 
-        // Ownership shouldn't change yet
-        assertEq(registry.owner(), admin);
-
-        // Step 2: New owner accepts
-        vm.prank(newAdmin);
+        vm.prank(nobody);
+        vm.expectRevert();
         registry.acceptOwnership();
+    }
 
-        // Ownership is officially transferred
-        assertEq(registry.owner(), newAdmin);
+    /*//////////////////////////////////////////////////////////////
+                         FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_SetAllWallets_Success(
+        address _la2,
+        address _mvi1,
+        address _riskPool,
+        address _dev
+    ) public {
+        vm.assume(_la2 != address(0));
+        vm.assume(_mvi1 != address(0));
+        vm.assume(_riskPool != address(0));
+        vm.assume(_dev != address(0));
+
+        vm.startPrank(admin);
+        registry.setLA2Wallet(_la2);
+        registry.setMVI1Wallet(_mvi1);
+        registry.setRiskPoolWallet(_riskPool);
+        registry.setDevWallet(_dev);
+        vm.stopPrank();
+
+        assertEq(registry.la2Wallet(), _la2);
+        assertEq(registry.mvi1Wallet(), _mvi1);
+        assertEq(registry.riskPoolWallet(), _riskPool);
+        assertEq(registry.devWallet(), _dev);
     }
 }

@@ -6,6 +6,13 @@ pragma solidity ^0.8.24;
 /// @notice Interface for the Registry to pull operational wallets.
 interface ILAWPActorRegistry {
     /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Emitted when a core actor's wallet address is updated (LA2, MVI1, Risk Pool, Dev).
+    event ActorUpdated(string role, address indexed oldAddress, address indexed newAddress);
+
+    /*//////////////////////////////////////////////////////////////
                                  LOGIC
     //////////////////////////////////////////////////////////////*/
 

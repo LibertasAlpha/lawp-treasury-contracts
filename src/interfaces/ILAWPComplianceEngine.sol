@@ -5,14 +5,13 @@ import { LAWPStructs } from "../libraries/LAWPStructs.sol";
 
 /// @title ILAWPComplianceEngine
 /// @author Obinna Franklin Duru (BinnaDev)
-/// @notice Interface for the core business logic, risk fee deduction, and proportional splitting.
+/// @notice The Zero-Custody Switchboard and Deterministic Accounting Layer.
+/// @dev Calculates splits, orchestrates single-hop transfers from external sources
+/// to isolated Vaults, and maintains O(1) ledgers for pull-based claiming.
 interface ILAWPComplianceEngine {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Emitted when the development wallet address is updated.
-    event DevWalletUpdated(address indexed oldWallet, address indexed newWallet);
 
     /// @notice Emitted when the engine is paused, halting all operations until unpaused.
     event EnginePaused(address indexed by);
@@ -20,58 +19,94 @@ interface ILAWPComplianceEngine {
     /// @notice Emitted when the engine is unpaused, allowing operations to resume.
     event EngineUnpaused(address indexed by);
 
-    /// @notice Emitted when a new contribution is processed and the risk fee is deducted.
-    event CapitalPooled(uint256 indexed poolId, uint256 grossAmount, uint256 riskFeeDeducted);
+    /// @notice Emitted when the risk fee basis points are updated.
+    event RiskFeeUpdated(uint256 oldFeeBPS, uint256 newFeeBPS);
+
+    /// @notice Emitted when the Multi-Sig Controller address is updated.
+    event MultiSigControllerUpdated(address indexed oldController, address indexed newController);
 
     /// @notice Emitted when a new project pool is created.
     event PoolCreated(uint256 indexed poolId, uint256 timestamp);
-
-    /// @notice Emitted when the Multi-Sig triggers a validated revenue distribution.
-    event RevenueRouted(uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount);
 
     /// @notice Emitted when a risk fee is assessed for a project pool.
     event RiskFeeAssessed(
         uint256 indexed poolId, uint256 grossAmount, uint256 feeAmount, uint256 netCapital
     );
 
-    /// @notice Emitted when a Contributor pulls their proportional yield.
+    /// @notice Emitted when a new contribution is processed and capital is safely locked.
+    event CapitalPooled(uint256 indexed poolId, uint256 grossAmount, uint256 riskFeeDeducted);
+
+    /// @notice Emitted when off-chain revenue is mathematically allocated and routed.
+    event OperationalAllocationRouted(
+        uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount
+    );
+
+    /// @notice Emitted when an operational actor (LA2, Dev, etc.) pulls their allocated funds.
+    event OperationalFundsClaimed(address indexed wallet, uint256 amount);
+
+    /// @notice Emitted when a Contributor pulls their proportional yield and RoC.
     event YieldClaimed(
         uint256 indexed tokenId, address indexed claimer, uint256 yieldAmount, uint256 rocAmount
     );
 
     /*//////////////////////////////////////////////////////////////
-                                 LOGIC
+                           CAPITAL FORMATION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Processes incoming pooled capital, deducts the 7-10% risk fee, and triggers NFT minting.
-    /// @param poolId The specific project pool identifier.
-    /// @param grossAmount The total CNGN contributed before fees.
-    /// @param contributors Array of contributor addresses.
-    /// @param bpsShares Array of proportional shares (must sum to 10000).
+    /// @notice Processes incoming investor capital and orchestrates physical vault drops.
+    /// @dev Pulls `_grossAmount` from msg.sender. Drops Risk Fee into Operational Vault.
+    /// Drops `netCapital` into Yield Vault. Mints fractional ERC-721 equity.
+    /// @param _poolId The unique deployment pool identifier.
+    /// @param _grossAmount Total cNGN deposited before risk fee deduction.
+    /// @param _contributors Array of investor wallet addresses.
+    /// @param _bpsShares Array of basis points representing fractional equity (must sum to 10000).
     function processPoolDeposit(
-        uint256 poolId,
-        uint256 grossAmount,
-        address[] calldata contributors,
-        uint256[] calldata bpsShares
+        uint256 _poolId,
+        uint256 _grossAmount,
+        address[] calldata _contributors,
+        uint256[] calldata _bpsShares
     ) external;
 
-    /// @notice Validates a Multi-Sig proposal payload and routes funds according to the strict LTD/GTE splits.
-    /// @param poolId The pool generating the revenue.
-    /// @param totalAmount The total CNGN to split.
-    /// @param flowType The strict classification of the flow (RoC, GRANT_INITIAL, GRANT_CONTINUOUS).
-    function validateAndRoute(uint256 poolId, uint256 totalAmount, LAWPStructs.FlowType flowType)
-        external;
+    /*//////////////////////////////////////////////////////////////
+                           REVENUE ROUTING
+    //////////////////////////////////////////////////////////////*/
 
-    /// @notice Allows a token holder to pull their accrued fractional share (Pull-over-Push pattern).
-    /// @param tokenId The ID of the ERC-721 Impact Token.
-    function claimYield(uint256 tokenId) external;
+    /// @notice Orchestrates the mathematical split and physical routing of external revenue.
+    /// @dev Pulls `_totalAmount` directly from the `_fundProvider`. Drops Yield/RoC directly into
+    /// the Yield Vault. Drops Operational funds directly into the Operational Vault. Credits internal ledgers.
+    /// @param _poolId The target deployment pool.
+    /// @param _totalAmount The verified fiat-equivalent revenue entering the system.
+    /// @param _flowType GRANT_INITIAL, GRANT_CONTINUOUS, or RoC.
+    function routeOperationalAllocation(
+        uint256 _poolId,
+        uint256 _totalAmount,
+        LAWPStructs.FlowType _flowType
+    ) external;
 
-    /// @notice Gas-optimized batch claim for multi-token holders.
-    /// @param tokenIds Array of ERC-721 Impact Token IDs owned by the caller.
-    function claimYieldBatch(uint256[] calldata tokenIds) external;
+    /*//////////////////////////////////////////////////////////////
+                           PULL-OVER-PUSH CLAIMS
+    //////////////////////////////////////////////////////////////*/
 
-    /// @notice Calculates the total proportional yield currently available for a specific token.
-    /// @param tokenId The ID of the ERC-721 Impact Token.
-    /// @return The amount of CNGN claimable.
-    function calculateProportionalYield(uint256 tokenId) external view returns (uint256);
+    /// @notice Allows operational teams to claim their allocated revenue splits.
+    /// @dev Relies on the `operationalBalances` ledger. Follows strict CEI pattern.
+    function claimOperationalFunds() external;
+
+    /// @notice Allows an investor to pull their accrued yield for a specific token.
+    /// @dev Calculates un-claimed yield against the O(1) `poolYieldTracker`.
+    /// @param _tokenId The ERC-721 Impact Token ID.
+    function claimYield(uint256 _tokenId) external;
+
+    /// @notice Gas-optimized batch claim for multiple tokens owned by the caller.
+    /// @param _tokenIds Array of token IDs to claim against.
+    function claimYieldBatch(uint256[] calldata _tokenIds) external;
+
+    /*//////////////////////////////////////////////////////////////
+                               VIEW HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the pending pullable balance for an operational wallet.
+    function getOperationalBalance(address _wallet) external view returns (uint256);
+
+    /// @notice Calculates the exact pending cNGN yield for a specific token.
+    function calculateProportionalYield(uint256 _tokenId) external view returns (uint256);
 }

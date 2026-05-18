@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
-import { ILAWPTreasury } from "../interfaces/ILAWPTreasury.sol";
+import { ILAWPYieldVault } from "../interfaces/ILAWPYieldVault.sol";
+import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
 import { ILAWPImpactToken } from "../interfaces/ILAWPImpactToken.sol";
 import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
 import { LAWPStructs } from "../libraries/LAWPStructs.sol";
-import { LAWPErrors } from "../libraries/LAWPErrors.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -16,22 +16,41 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 
 /// @title LAWPComplianceEngine
 /// @author Obinna Franklin Duru (BinnaDev)
-/// @notice Enforces systemic risk fee deductions and strict LTD/GTE fractional revenue routing.
-contract LAWPComplianceEngine is
-    ILAWPComplianceEngine,
-    LAWPErrors,
-    Ownable2Step,
-    ReentrancyGuard,
-    Pausable
-{
+/// @notice The Zero-Custody Switchboard and Deterministic Accounting Layer for strict LTD/GTE fractional revenue routing.
+contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
+
+    /*//////////////////////////////////////////////////////////////
+                        COMPLIANCE ENGINE ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error LAWPComplianceEngine_InvalidRiskFee();
+    error LAWPComplianceEngine_SystemPaused();
+    error LAWPComplianceEngine_UnauthorizedCaller();
+    error LAWPComplianceEngine_InvalidFlowType();
+    error LAWPComplianceEngine_ExceedsPrincipalCap();
+    error LAWPComplianceEngine_ArrayMismatch();
+    error LAWPComplianceEngine_InvalidBPS();
+    error LAWPComplianceEngine_ZeroAddress();
+    error LAWPComplianceEngine_InvalidAmount();
+    error LAWPComplianceEngine_PoolAlreadyExists();
+    error LAWPComplianceEngine_InvalidActor();
+    error LAWPComplianceEngine_ArrayTooLarge();
+    error LAWPComplianceEngine_NothingToClaim();
+    error LAWPComplianceEngine_BatchTooLarge();
+    error LAWPComplianceEngine_NotTokenOwner(uint256 tokenId);
+    error LAWPComplianceEngine_NoOperationalFunds();
+    error LAWPComplianceEngine_UnauthorizedInjector(address fundProvider);
+    error LAWPComplianceEngine_ZeroAddressInjector();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Treasury contract for secure fund management and transfers.
-    ILAWPTreasury public immutable treasury;
+    /// @notice Dedicated vault for isolating Investor Principal, RoC, and Yield.
+    ILAWPYieldVault public immutable yieldVault;
+
+    /// @notice Dedicated vault for isolating Systemic Risk Fees, Dev, LA2, and MVI1 payouts.
+    ILAWPOperationalVault public immutable operationalVault;
 
     /// @notice Impact Token contract for minting shares and tracking ownership/metadata.
     ILAWPImpactToken public immutable impactToken;
@@ -69,6 +88,9 @@ contract LAWPComplianceEngine is
     /// @notice Tracks the total yield already claimed by a specific tokenId to ensure accurate O(1) pro-rata math.
     mapping(uint256 tokenId => uint256 claimedAmount) public yieldClaimed;
 
+    /// @notice The Pull-over-Push Operational Ledger tracking pullable balances for operational actors.
+    mapping(address wallet => uint256 balance) public operationalBalances;
+
     /// @notice Structure defining the creation state of a project pool.
     struct Pool {
         bool exists;
@@ -95,22 +117,24 @@ contract LAWPComplianceEngine is
 
     /// @notice Initializes the Compliance Engine with essential system dependencies.
     /// @param _admin Address of the Owner / Timelock controller.
-    /// @param _treasury Address of the LAWPTreasury contract.
+    /// @param _yieldVault Address of the LAWPYieldVault contract.
+    /// @param _operationalVault Address of the ILAWPOperationalVault contract.
     /// @param _impactToken Address of the LAWPImpactToken contract.
     /// @param _registry Address of the LAWPActorRegistry contract.
     /// @param _cngnToken Address of the primary ERC20 asset (cNGN).
     /// @param _initialRiskFeeBPS Starting risk fee applied to all deposits (max 1000 BPS).
     constructor(
         address _admin,
-        address _treasury,
+        address _yieldVault,
+        address _operationalVault,
         address _impactToken,
         address _registry,
         address _cngnToken,
         uint256 _initialRiskFeeBPS
     ) Ownable(_admin) {
         if (
-            _treasury == address(0) || _impactToken == address(0) || _registry == address(0)
-                || _cngnToken == address(0)
+            _yieldVault == address(0) || _operationalVault == address(0)
+                || _impactToken == address(0) || _registry == address(0) || _cngnToken == address(0)
         ) {
             revert LAWPComplianceEngine_ZeroAddress();
         }
@@ -118,7 +142,8 @@ contract LAWPComplianceEngine is
             revert LAWPComplianceEngine_InvalidRiskFee();
         }
 
-        treasury = ILAWPTreasury(_treasury);
+        yieldVault = ILAWPYieldVault(_yieldVault);
+        operationalVault = ILAWPOperationalVault(_operationalVault);
         impactToken = ILAWPImpactToken(_impactToken);
         registry = ILAWPActorRegistry(_registry);
         cngnToken = IERC20(_cngnToken);
@@ -138,7 +163,10 @@ contract LAWPComplianceEngine is
     /// @param _multiSig The address of the authorized Multi-Sig wallet.
     function setMultiSigController(address _multiSig) external onlyOwner {
         if (_multiSig == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        address oldController = multiSigController;
         multiSigController = _multiSig;
+
+        emit MultiSigControllerUpdated(oldController, _multiSig);
     }
 
     /// @notice Updates the systemic risk fee applied to incoming pool deposits.
@@ -147,7 +175,10 @@ contract LAWPComplianceEngine is
         if (_newFeeBPS == 0 || _newFeeBPS > MAX_RISK_FEE) {
             revert LAWPComplianceEngine_InvalidRiskFee();
         }
+        uint256 oldFee = riskFeeBPS;
         riskFeeBPS = _newFeeBPS;
+
+        emit RiskFeeUpdated(oldFee, _newFeeBPS);
     }
 
     /// @notice Instantly freezes capital formation and revenue routing in emergencies.
@@ -198,8 +229,10 @@ contract LAWPComplianceEngine is
 
         // Interactions: Securely transfer funds and mint fractional equity.
         // 3. Pull total gross amount from sender to the Treasury Vault.
-        cngnToken.safeTransferFrom(msg.sender, address(treasury), _grossAmount);
-        if (riskFee > 0) treasury.routeRiskFee(riskFee);
+        if (riskFee > 0) {
+            cngnToken.safeTransferFrom(msg.sender, address(operationalVault), riskFee);
+        }
+        cngnToken.safeTransferFrom(msg.sender, address(yieldVault), _grossAmount);
         emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
 
         // 4. Mint fractional shares to contributors based on net capital.
@@ -213,24 +246,24 @@ contract LAWPComplianceEngine is
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
-    function validateAndRoute(uint256 _poolId, uint256 _totalAmount, LAWPStructs.FlowType _flowType)
-        external
-        override
-        whenNotPaused
-        nonReentrant
-        onlyMultiSig
-    {
-        if (_totalAmount == 0) revert LAWPComplianceEngine_InvalidAmount();
+    function routeOperationalAllocation(
+        uint256 _poolId,
+        uint256 _totalAmount,
+        LAWPStructs.FlowType _flowType
+    ) external override whenNotPaused nonReentrant onlyMultiSig {
+        if (_totalAmount == 0) {
+            revert LAWPComplianceEngine_InvalidAmount();
+        }
 
         if (_flowType == LAWPStructs.FlowType.RoC) {
             // 100% of this specific routed amount is assigned to the Return of Contribution tracker
             poolRocTracker[_poolId] += _totalAmount;
+
+            cngnToken.safeTransferFrom(msg.sender, address(yieldVault), _totalAmount);
         } else if (_flowType == LAWPStructs.FlowType.GRANT_INITIAL) {
             address la2 = registry.la2Wallet();
-            if (la2 == address(0)) revert LAWPComplianceEngine_InvalidActor();
-
             address mvi = registry.mvi1Wallet();
-            if (mvi == address(0)) revert LAWPComplianceEngine_InvalidActor();
+            if (la2 == address(0) || mvi == address(0)) revert LAWPComplianceEngine_InvalidActor();
 
             // System 1: 30% Collective, 50% LA2, 20% MVI1
             uint256 la2Split = (_totalAmount * 5000) / TOTAL_BPS;
@@ -238,17 +271,19 @@ contract LAWPComplianceEngine is
             uint256 mviSplit = _totalAmount - la2Split - colSplit;
 
             poolYieldTracker[_poolId] += colSplit;
-            treasury.executeTransfer(la2, la2Split);
-            treasury.executeTransfer(mvi, mviSplit);
+            operationalBalances[la2] += la2Split;
+            operationalBalances[mvi] += mviSplit;
+
+            // Physical Switchboard routing
+            cngnToken.safeTransferFrom(msg.sender, address(yieldVault), colSplit);
+            cngnToken.safeTransferFrom(msg.sender, address(operationalVault), la2Split + mviSplit);
         } else if (_flowType == LAWPStructs.FlowType.GRANT_CONTINUOUS) {
             address la2 = registry.la2Wallet();
-            if (la2 == address(0)) revert LAWPComplianceEngine_InvalidActor();
-
             address mvi = registry.mvi1Wallet();
-            if (mvi == address(0)) revert LAWPComplianceEngine_InvalidActor();
-
             address devWallet = registry.devWallet();
-            if (devWallet == address(0)) revert LAWPComplianceEngine_InvalidActor();
+            if (la2 == address(0) || mvi == address(0) || devWallet == address(0)) {
+                revert LAWPComplianceEngine_InvalidActor();
+            }
 
             // System 2: 10% Collective, 55% LA2, 25% MVI1, 10% Dev
             uint256 la2Split = (_totalAmount * 5500) / TOTAL_BPS;
@@ -257,14 +292,20 @@ contract LAWPComplianceEngine is
             uint256 devSplit = _totalAmount - la2Split - mviSplit - colSplit;
 
             poolYieldTracker[_poolId] += colSplit;
-            treasury.executeTransfer(la2, la2Split);
-            treasury.executeTransfer(mvi, mviSplit);
-            treasury.executeTransfer(devWallet, devSplit);
+            operationalBalances[la2] += la2Split;
+            operationalBalances[mvi] += mviSplit;
+            operationalBalances[devWallet] += devSplit;
+
+            // Physical Switchboard routing
+            cngnToken.safeTransferFrom(msg.sender, address(yieldVault), colSplit);
+            cngnToken.safeTransferFrom(
+                msg.sender, address(operationalVault), la2Split + mviSplit + devSplit
+            );
         } else {
             revert LAWPComplianceEngine_InvalidFlowType();
         }
 
-        emit RevenueRouted(_poolId, _flowType, _totalAmount);
+        emit OperationalAllocationRouted(_poolId, _flowType, _totalAmount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -272,14 +313,27 @@ contract LAWPComplianceEngine is
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
-    function claimYield(uint256 _tokenId) external override nonReentrant {
-        address owner = impactToken.ownerOf(_tokenId);
+    function claimOperationalFunds() external override nonReentrant {
+        uint256 amount = operationalBalances[msg.sender];
+        if (amount == 0) revert LAWPComplianceEngine_NoOperationalFunds();
 
-        uint256 totalClaim = _claimYieldForToken(_tokenId, owner);
+        // Strict CEI Pattern
+        operationalBalances[msg.sender] = 0;
+
+        operationalVault.executeTransfer(msg.sender, amount);
+
+        emit OperationalFundsClaimed(msg.sender, amount);
+    }
+
+    /// @inheritdoc ILAWPComplianceEngine
+    function claimYield(uint256 _tokenId) external override nonReentrant {
+        address tokenOwner = impactToken.ownerOf(_tokenId);
+
+        uint256 totalClaim = _claimYieldForToken(_tokenId, tokenOwner);
         if (totalClaim == 0) revert LAWPComplianceEngine_NothingToClaim();
 
         // Single external transfer to the token owner
-        treasury.executeTransfer(owner, totalClaim);
+        yieldVault.executeTransfer(tokenOwner, totalClaim);
     }
 
     /// @inheritdoc ILAWPComplianceEngine
@@ -287,17 +341,17 @@ contract LAWPComplianceEngine is
         uint256 length = _tokenIds.length;
         if (length > MAX_BATCH_CLAIM) revert LAWPComplianceEngine_BatchTooLarge();
 
-        uint256 aggregateClaim;
+        uint256 aggregateClaim = 0;
 
         for (uint256 i; i < length;) {
             uint256 tokenId = _tokenIds[i];
 
             // Ownership validation: Enforce that the caller owns every token in the batch
-            address owner = impactToken.ownerOf(tokenId);
-            if (owner != msg.sender) revert LAWPComplianceEngine_NotTokenOwner(tokenId);
+            address tokenOwner = impactToken.ownerOf(tokenId);
+            if (tokenOwner != msg.sender) revert LAWPComplianceEngine_NotTokenOwner(tokenId);
 
             // Compute claimable amount and securely update token state
-            aggregateClaim += _claimYieldForToken(tokenId, owner);
+            aggregateClaim += _claimYieldForToken(tokenId, tokenOwner);
 
             unchecked {
                 ++i;
@@ -307,7 +361,16 @@ contract LAWPComplianceEngine is
         if (aggregateClaim == 0) revert LAWPComplianceEngine_NothingToClaim();
 
         // Single aggregated external transfer to optimize gas
-        treasury.executeTransfer(msg.sender, aggregateClaim);
+        yieldVault.executeTransfer(msg.sender, aggregateClaim);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                               VIEW HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc ILAWPComplianceEngine
+    function getOperationalBalance(address _wallet) external view override returns (uint256) {
+        return operationalBalances[_wallet];
     }
 
     /// @inheritdoc ILAWPComplianceEngine
@@ -344,9 +407,9 @@ contract LAWPComplianceEngine is
     /// @notice Calculates the accurate Continuous Yield and RoC owed, processes state updates, and emits events.
     /// @dev Silently returns 0 if no funds are claimable to facilitate uninterrupted batch processing.
     /// @param _tokenId The specific ID of the Impact Token.
-    /// @param _owner The explicitly pre-fetched owner of the token to guarantee correct event emission.
+    /// @param _tokenOwner The explicitly pre-fetched owner of the token to guarantee correct event emission.
     /// @return claimable The aggregate CNGN amount owed to the token.
-    function _claimYieldForToken(uint256 _tokenId, address _owner)
+    function _claimYieldForToken(uint256 _tokenId, address _tokenOwner)
         internal
         returns (uint256 claimable)
     {
@@ -398,7 +461,7 @@ contract LAWPComplianceEngine is
             if (claimableRoc > 0) {
                 impactToken.updateRocReturned(_tokenId, claimableRoc);
             }
-            emit YieldClaimed(_tokenId, _owner, claimableYield, claimableRoc);
+            emit YieldClaimed(_tokenId, _tokenOwner, claimableYield, claimableRoc);
         }
     }
 
@@ -408,7 +471,7 @@ contract LAWPComplianceEngine is
         internal
         pure
     {
-        uint256 totalBPS;
+        uint256 totalBPS = 0;
         for (uint256 i; i < _contributorsLength;) {
             totalBPS += _bpsShares[i];
             unchecked {
@@ -444,10 +507,12 @@ contract LAWPComplianceEngine is
         for (uint256 i; i < _contributorsLength;) {
             if (i == lastIndex) {
                 // Final contributor absorbs any mathematical dust to maintain total principal integrity
+                /* uint256 mintedTokenId = */
                 impactToken.mint(_contributors[i], remainingCapital, _bpsShares[i], _poolId);
             } else {
                 uint256 userNetPrincipal = (_netCapital * _bpsShares[i]) / TOTAL_BPS;
                 remainingCapital -= userNetPrincipal;
+                /* uint256 mintedTokenId = */
                 impactToken.mint(_contributors[i], userNetPrincipal, _bpsShares[i], _poolId);
             }
             unchecked {

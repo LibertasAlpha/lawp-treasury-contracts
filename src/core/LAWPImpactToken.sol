@@ -8,13 +8,27 @@ import { ILAWPImpactToken } from "../interfaces/ILAWPImpactToken.sol";
 import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { LAWPStructs } from "../libraries/LAWPStructs.sol";
-import { LAWPErrors } from "../libraries/LAWPErrors.sol";
 
 /// @title LAWPImpactToken
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Fractional Bearer Asset tracking Impact Equity, RoC, and Continuous Yield rights.
 /// @dev Implements the Interception Hook to prevent yield double-spending on secondary markets.
-contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, ReentrancyGuard {
+contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGuard {
+    /*//////////////////////////////////////////////////////////////
+                          IMPACT TOKEN ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error LAWPImpactToken_TransferIntercepted();
+    error LAWPImpactToken_UnauthorizedCaller();
+    error LAWPImpactToken_ExceedsPrincipalCap();
+    error LAWPImpactToken_InvalidTokenId();
+    error LAWPImpactToken_ZeroAddressMint();
+    error LAWPImpactToken_InvalidRocAmount();
+    error LAWPImpactToken_ZeroAddress();
+    error LAWPImpactToken_InvalidBaseURI();
+    error LAWPImpactToken_InvalidPrincipal();
+    error LAWPImpactToken_InvalidBPS();
+    error LAWPImpactToken_InvalidPoolId();
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -39,7 +53,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyComplianceEngine() {
-        if (msg.sender != complianceEngine) revert LAWPComplianceEngine_UnauthorizedCaller();
+        if (msg.sender != complianceEngine) revert LAWPImpactToken_UnauthorizedCaller();
         _;
     }
 
@@ -125,9 +139,9 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
             poolId: _poolId
         });
 
-        _mint(_to, tokenId);
-
         emit ImpactTokenMinted(tokenId, _to, _netPrincipal, _poolShareBPS);
+
+        _mint(_to, tokenId);
     }
 
     /// @inheritdoc ILAWPImpactToken
@@ -141,7 +155,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, LAWPErrors, Ownable2Step, 
 
         LAWPStructs.TokenData storage data = _tokenData[_tokenId];
         if (data.rocReturned + _amount > data.netPrincipal) {
-            revert LAWPComplianceEngine_ExceedsPrincipalCap();
+            revert LAWPImpactToken_ExceedsPrincipalCap();
         }
 
         data.rocReturned += _amount;

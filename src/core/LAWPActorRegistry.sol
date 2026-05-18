@@ -3,13 +3,21 @@ pragma solidity ^0.8.24;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
 
 /// @title LAWPActorRegistry
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Centralized directory for operational addresses (LA2, MVI1, Risk Pool).
 /// @dev Inherits Ownable. Ownership will be transferred to the TimelockController.
-contract LAWPActorRegistry is Ownable2Step {
+contract LAWPActorRegistry is ILAWPActorRegistry, Ownable2Step {
+    /*//////////////////////////////////////////////////////////////
+                         ACTOR REGISTRY ERRORS
+    //////////////////////////////////////////////////////////////*/
     error LAWPActorRegistry_ZeroAddress();
+
+    /*//////////////////////////////////////////////////////////////
+                            STATE VARIABLES
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice LA2 (Project Management) wallet address responsible for overseeing project execution and coordination.
     address public la2Wallet;
@@ -22,8 +30,6 @@ contract LAWPActorRegistry is Ownable2Step {
 
     /// @notice DApp Team (Dev) wallet address responsible for receiving development funds and managing technical operations.
     address public devWallet;
-
-    event ActorUpdated(string role, address oldAddress, address newAddress);
 
     /// @notice Initializes the registry with the initial Timelock/Admin address.
     /// @param _initialAdmin The address of the Timelock controller.
