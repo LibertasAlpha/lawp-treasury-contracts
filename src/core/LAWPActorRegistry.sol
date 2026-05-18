@@ -7,7 +7,7 @@ import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 /// @title LAWPActorRegistry
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Centralized directory for operational addresses (LA2, MVI1, Risk Pool).
-/// @dev Inherits Ownable. Ownership will be transferred to the TimelockController in Phase 6.
+/// @dev Inherits Ownable. Ownership will be transferred to the TimelockController.
 contract LAWPActorRegistry is Ownable2Step {
     error LAWPActorRegistry_ZeroAddress();
 

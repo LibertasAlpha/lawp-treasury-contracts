@@ -111,7 +111,7 @@ contract LAWPMultiSigController is
     /// 1. Board members observe a fiat deposit in the Planbok account.
     /// 2. They construct the payload (`proposalId`, `poolId`, `deadline`, etc.) and sign it locally.
     /// 3. A relayer collects `threshold` number of signatures, sorts them by signer address, and submits this transaction.
-    ///    Execution is permissionless; anyone can pay the gas to submit valid signatures.
+    /// Execution is permissionless; anyone can pay the gas to submit valid signatures.
     function executeProposal(
         uint256 _proposalId,
         uint256 _poolId,

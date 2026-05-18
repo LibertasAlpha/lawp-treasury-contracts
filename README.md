@@ -2,7 +2,7 @@
 
 ## Protocol Summary
 
-The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing protocol designed to bridge real-world fiat revenue (via the Planbok system) with on-chain fractional Impact Equity. By separating asset custody from routing logic, the protocol translates strict non-profit (LTD/GTE) legal mandates into impassable, immutable math. It features an O(1) continuous yield engine, a 48-hour Timelock governance layer, and cryptographically verified off-chain reporting to ensure transparency, solvency, and decentralized accountability.
+The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing protocol designed to bridge real-world fiat revenue (via the Planbok system) with on-chain fractional Impact Equity. By separating asset custody from routing logic through a Zero-Custody Switchboard and Dual-Treasury Architecture, the protocol translates strict non-profit (LTD/GTE) legal mandates into impassable, immutable math. It features an O(1) continuous yield engine, a 48-hour Timelock governance layer, and cryptographically verified off-chain reporting to ensure transparency, solvency, and decentralized accountability.
 
 **Additional documentation:**
 
@@ -12,8 +12,10 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 ## Key Features
 
+- **Zero-Custody Switchboard:** The Compliance Engine holds a 0 balance, routing funds directly from the off-chain Injector Wallet to specific vaults in a single hop.
+- **Dual-Treasury Segregation:** Pure physical separation of Investor Funds (`LAWPYieldTreasury`) and Operational/Payroll Funds (`LAWPOperationalTreasury`).
+- **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
 - **Trustless Revenue Routing:** Enforces strict mathematical splits for Initial Grants (30/50/20) and Continuous Grants (10/55/25/10) without manual intervention.
-- **O(1) Yield Claiming (Pull-over-Push):** Completely eliminates gas-limit DoS vulnerabilities; claiming gas costs remain constant regardless of protocol scale or age.
 - **Atomic Transfer Hook (Double-Spend Protection):** Forcefully flushes pending yields upon ERC-721 token transfer, ensuring secondary market buyers receive a clean state.
 - **Emergency Guardian Pattern:** The Operational Multi-Sig can instantly pause the system to stop exploits, but cannot unpause or extract funds (unpausing requires a 48-hour Timelock vote).
 - **Fractional Dust Conservation:** Absorbs all wei rounding errors natively, mathematically guaranteeing 100% protocol solvency.
@@ -22,13 +24,17 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 ### Core Components
 
-- **LAWPComplianceEngine (The Brain)**
-  - **Responsibility:** Calculates proportional equity, deducts systemic risk fees, and executes the mathematical routing splits for all revenue flows.
-  - **Key Functions:** `processPoolDeposit()`, `validateAndRoute()`, `claimYield()`, `claimYieldBatch()`
+- **LAWPComplianceEngine (The Zero-Custody Switchboard)**
+  - **Responsibility:** Calculates proportional equity, deducts systemic risk fees, and executes mathematical routing. Updates internal accounting ledgers and instructs the movement of tokens without holding funds.
+  - **Key Functions:** `processPoolDeposit()`, `validateAndRoute()`, `claimYield()`, `claimOperationalFunds()`
 
-- **LAWPTreasury (The Vault)**
-  - **Responsibility:** Subordinate "Dumb Vault" that custodies all cNGN assets. Reverts any transaction not explicitly commanded by the Compliance Engine.
-  - **Key Functions:** `deposit()`, `executeTransfer()`, `routeRiskFee()`
+- **LAWPYieldTreasury (Vault A: Investor Funds)**
+  - **Responsibility:** Subordinate vault holding Net Principal, Return of Contribution (RoC), and pending Yield. Contains no public deposit functions to prevent orphaned capital.
+  - **Key Functions:** `executeTransfer()`
+
+- **LAWPOperationalTreasury (Vault B: Protocol Funds)**
+  - **Responsibility:** Subordinate vault holding Systemic Risk Fees, Dev splits, LA2, and MVI1 payouts. Contains no public deposit functions.
+  - **Key Functions:** `executeTransfer()`
 
 - **LAWPImpactToken (The Equity)**
   - **Responsibility:** ERC-721 implementation representing fractional ownership of a deployment pool. Houses the state-desync interception hook.
@@ -46,60 +52,67 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Responsibility:** OpenZeppelin v5 48-hour delay queue. Owns all protocol contracts and protects the community from malicious admin upgrades.
   - **Key Functions:** `scheduleBatch()`, `executeBatch()`
 
-## Component Interaction Flow
+### Component Interaction Flow
 
-1. **User (Community Board) → LAWPMultiSigController**
+1. **Real World to Bridge**
+   - Operators convert fiat from 3 segregated physical bank accounts (Activator, Service, RoC) to cNGN in the "Injector Wallet" and sign an EIP-712 payload.
+
+2. **User (Relayer) -> LAWPMultiSigController**
    - Calls `executeProposal` with an EIP-712 payload containing signatures, the `poolId`, the generated `totalAmount`, and the `flowType`.
 
-2. **LAWPMultiSigController → LAWPMultiSigController (Internal)**
+3. **LAWPMultiSigController -> LAWPMultiSigController (Internal)**
    - Validates the digest, checks the 3-of-5 signature threshold, and verifies cryptographic replay protection (nonce mapping).
 
-3. **LAWPMultiSigController → LAWPComplianceEngine**
+4. **LAWPMultiSigController -> LAWPComplianceEngine**
    - Calls `validateAndRoute()` with the validated revenue parameters.
 
-4. **LAWPComplianceEngine → LAWPTreasury & Internal Ledgers**
-   - Updates the O(1) `poolYieldTracker` or `poolRocTracker` for the given pool.
-   - Instructs the `LAWPTreasury` to physically transfer the operational splits (LA2, MVI1, Dev) directly to their respective wallets.
+5. **LAWPComplianceEngine -> Treasuries & Internal Ledgers**
+   - The Engine pulls the Yield portion directly from the Injector Wallet to the `LAWPYieldTreasury`.
+   - The Engine pulls the Operational portion directly from the Injector Wallet to the `LAWPOperationalTreasury`.
+   - Credits the O(1) `poolYieldTracker` (for investors) and the `operationalBalances` ledger (for operators).
 
-5. **Final State**
-   - Operational wallets receive their immediate capital.
-   - Impact Token holders' `calculateProportionalYield()` instantly reflects their new pending balances, ready to be pulled permissionlessly.
+6. **Final State**
+   - Funds rest safely in the dual vaults.
+   - Impact Token holders and Operational Teams must manually trigger claims to pull their respective balances permissionlessly.
 
-## Example Execution
+### Example Execution
 
-### Yield Claim Process (Pull-over-Push)
+#### Yield Claim Process (Pull-over-Push)
 
 1. User calls:
 
    ```solidity
-   engine.claimYield(tokenId);
+     engine.claimYield(tokenId);
    ```
 
-2. `LAWPComplianceEngine` processes request:
+2. **LAWPComplianceEngine processes request:**
    - Queries `LAWPImpactToken` for the token's `poolId`, `poolShareBPS`, and `rocReturned`.
    - Computes total historical yield for the pool: `(poolYieldTracker[poolId] * poolShareBPS) / 10000`.
    - Subtracts the user's previously claimed yield: `totalHistorical - yieldClaimed[tokenId]`.
 
 3. **Internal operations:**
    - Updates the user's `yieldClaimed` and `rocReturned` state to prevent re-entrancy and idempotency failures.
-   - Executes cross-contract call to `LAWPTreasury`.
+   - Executes cross-contract call to `LAWPYieldTreasury`.
 
-4. Result:
-   - `LAWPTreasury` pushes the exact cNGN amount to the user's wallet.
-   - `YieldClaimed` event is emitted.
+- **Result:**
+  - `LAWPYieldTreasury` pushes the exact cNGN amount to the user's wallet.
+  - `YieldClaimed` event is emitted.
 
 ## State & Data Model
 
-- `LAWPStructs.TokenData` (Struct)
+- **LAWPStructs.TokenData (Struct)**
   - **Description:** Tracks the exact fractional equity and RoC state of a contributor.
   - **Fields:** `uint256 netPrincipal`, `uint256 rocReturned`, `uint256 poolShareBPS`, `uint256 poolId`
 
-- `LAWPStructs.Proposal` (Struct - EIP-712)
+- **LAWPStructs.Proposal (Struct - EIP-712)**
   - **Description:** Gas-optimized proposal structure for off-chain Multi-Sig payloads.
   - **Fields:** `uint96 totalRevenue`, `FlowType flowType`, `bool executed`, `uint40 submittedAt`
 
-- `poolYieldTracker` & `poolRocTracker` (Mappings)
-  - **Description:** The core of the O(1) Math Engine. Tracks the cumulative, all-time revenue routed to a specific `poolId`.
+- **poolYieldTracker & poolRocTracker (Mappings)**
+  - **Description:** The core of the O(1) Math Engine. Tracks the cumulative, all-time revenue/repayment routed to a specific `poolId` for Investors.
+
+- **operationalBalances (Mapping)**
+  - **Description:** Tracks the internal balance of specific operational wallets (e.g., LA2, Dev, Risk Pool) to facilitate pull-over-push.
 
 ## Invariants & Security Model
 
@@ -109,6 +122,8 @@ The protocol is mathematically secured by a Stateful Invariant Fuzzing suite (`L
 - **Invariant B (Solvency Law):** The Treasury balance will always equal or exceed the total outstanding un-claimed yield + total remaining RoC buffers.
 - **Invariant C (Dust Conservation):** Fractional math must never leak a single wei. `Sum(netPrincipal) == GrossDeposit - RiskFee`.
 - **Invariant D (The Transfer Hook):** Receiver's pending yield MUST evaluate to exactly 0 immediately post-transfer. Yield is not duplicated.
+- **No Orphaned Capital:** Treasuries lack public `deposit()` functions. All funds must pass through the Engine to be registered on an internal ledger.
+- **Vault Segregation:** `LAWPYieldTreasury` balance MUST always be >= Unclaimed Investor Liabilities. `LAWPOperationalTreasury` balance MUST always be >= Unclaimed Operational Liabilities.
 
 ### Failure Conditions
 
@@ -117,7 +132,7 @@ Reverts when:
 - `LAWPImpactToken._update()`: The token transfer attempts to execute while the Compliance Engine is paused.
 - `LAWPMultiSigController.executeProposal()`: Signatures are unordered (duplicate submission) or `v, r, s` malleability is detected.
 - `LAWPComplianceEngine.processPoolDeposit()`: Basis points (`bpsShares`) array does not sum to exactly 10,000.
-- `LAWPTreasury.executeTransfer()`: The caller is anyone other than the registered Compliance Engine.
+- `LAWPYieldTreasury.executeTransfer()` / `LAWPOperationalTreasury.executeTransfer()`: The caller is anyone other than the registered Compliance Engine.
 
 ## External Dependencies
 
@@ -237,8 +252,9 @@ make configure-protocol-testnet
 - [x] Phase 4: Off-Chain Verification (Multi-Sig & EIP-712).
 - [x] Phase 5: Stateful Invariant Fuzzing & O(1) Gas Optimizations.
 - [x] Phase 6: Institutional Timelock Governance & Deployment Scripts.
-- [ ] Phase 7: External Independent Audit.
-- [ ] Phase 8: Base Mainnet Launch.
+- [ ] Phase 7: Dual-Treasury & Switchboard Refactoring.
+- [ ] Phase 8: External Independent Audit.
+- [ ] Phase 9: Base Mainnet Launch.
 
 ## License
 
