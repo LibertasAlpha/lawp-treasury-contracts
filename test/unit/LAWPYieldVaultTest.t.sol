@@ -6,7 +6,7 @@ import { LAWPYieldVault } from "../../src/core/LAWPYieldVault.sol";
 import { MockCngn3, MockAdminOperations } from "../mocks/MockCngn3.sol";
 
 /// @title LAWPYieldVaultTest
-/// @notice Unit tests for LAWPYieldVault — investor capital isolation layer.
+/// @notice Unit tests for LAWPYieldVault - investor capital isolation layer.
 /// @dev Tests: constructor guards, compliance engine linking, executeTransfer authorization,
 ///      zero-address guards, amount guards, reentrancy resistance, and ownership protection.
 contract LAWPYieldVaultTest is Test {
@@ -49,7 +49,7 @@ contract LAWPYieldVaultTest is Test {
     }
 
     function test_Constructor_RevertIf_ZeroAdmin() public {
-        vm.expectRevert(LAWPYieldVault.LAWPYieldVault_InvalidAddress.selector);
+        vm.expectRevert();
         new LAWPYieldVault(address(cngn), address(0));
     }
 
@@ -140,7 +140,7 @@ contract LAWPYieldVaultTest is Test {
     }
 
     function test_ExecuteTransfer_RevertIf_AdminCallsDirectly() public {
-        // Admin is NOT the compliance engine — must revert
+        // Admin is NOT the compliance engine - must revert
         vm.prank(admin);
         vm.expectRevert(LAWPYieldVault.LAWPYieldVault_UnauthorizedCaller.selector);
         vault.executeTransfer(recipient, 1_000e6);

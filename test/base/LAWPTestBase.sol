@@ -12,10 +12,25 @@ import { MockMultiSig } from "../mocks/MockMultiSig.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 
 /// @title LAWPTestBase
-/// @notice Shared Foundry test base providing deterministic deployment and wiring of the
-///         full LAWP protocol stack against the simplified dual-vault architecture.
-///         All downstream test contracts inherit from this to eliminate boilerplate and
-///         ensure consistent, reproducible state across every test category.
+/// @notice Shared Foundry test base for the LAWP dual-vault protocol.
+///
+/// @dev TOKEN FLOW ARCHITECTURE (enforced in setUp):
+///
+///      processPoolDeposit (deposit flow):
+///        coordinator -> engine.processPoolDeposit(poolId, gross, contributors, bps)
+///        engine does: safeTransferFrom(msg.sender=coordinator, operationalVault, riskFee)
+///                     safeTransferFrom(msg.sender=coordinator, yieldVault, netCapital)
+///        Approval needed: coordinator -> approves ENGINE
+///
+///      routeOperationalAllocation (revenue routing flow):
+///        coordinator -> mockMultiSig.execute(poolId, amount, flow)
+///        mockMultiSig -> engine.routeOperationalAllocation(poolId, amount, coordinator, flow)
+///        engine does: safeTransferFrom(_fundProvider=coordinator, vault, amount)
+///        Approval needed: coordinator -> approves ENGINE
+///
+///      Both flows share the SAME approval (coordinator -> engine).
+///      MockMultiSig holds ZERO cNGN at all times.
+///      Only LAWPYieldVault and LAWPOperationalVault hold protocol cNGN.
 abstract contract LAWPTestBase is Test {
     /*//////////////////////////////////////////////////////////////
                               CONTRACTS
@@ -28,18 +43,22 @@ abstract contract LAWPTestBase is Test {
     LAWPActorRegistry public registry;
     MockCngn3 public cngn;
     MockAdminOperations public adminOps;
+    MockMultiSig public mockMultiSig;
 
     /*//////////////////////////////////////////////////////////////
                               ACTORS
     //////////////////////////////////////////////////////////////*/
 
     address public admin = address(1);
-    address public multiSig = address(2);
+
+    /// @notice The relayer: gas payer AND ERC20 fund provider for both deposit and routing.
+    ///         Approves the ENGINE directly - never the MockMultiSig.
+    address public coordinator = address(7);
+
     address public la2Wallet = address(3);
     address public mvi1Wallet = address(4);
     address public riskPoolWallet = address(5);
     address public devWallet = address(6);
-    address public coordinator = address(7); // Relayer: gas payer AND cNGN fund provider
 
     address public userA = address(10);
     address public userB = address(11);
@@ -47,10 +66,10 @@ abstract contract LAWPTestBase is Test {
     address public attacker = address(99);
 
     /*//////////////////////////////////////////////////////////////
-                           PROTOCOL CONSTANTS
+                           CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public constant RISK_FEE_BPS = 1000; // 10%
+    uint256 public constant RISK_FEE_BPS = 1000;
     uint256 public constant TOTAL_BPS = 10_000;
     uint256 public constant SEED_AMOUNT = 10_000_000e6;
 
@@ -59,30 +78,39 @@ abstract contract LAWPTestBase is Test {
     //////////////////////////////////////////////////////////////*/
 
     function setUp() public virtual {
-        _deployContracts();
-        _configureRegistry();
+        _deployMockToken();
+        _deployRegistry();
+        _deployVaults();
+        _deployImpactToken();
         _deployEngine();
+        _deployMockMultiSig();
         _linkContracts();
-        _seedTokens();
+        _seedAndApprove();
+        _assertSetupInvariants();
     }
 
-    function _deployContracts() internal {
+    function _deployMockToken() internal {
         adminOps = new MockAdminOperations();
         cngn = new MockCngn3(address(adminOps));
-
-        registry = new LAWPActorRegistry(admin);
-        yieldVault = new LAWPYieldVault(address(cngn), admin);
-        operationalVault = new LAWPOperationalVault(address(cngn), admin);
-        impactToken = new LAWPImpactToken(admin, "ipfs://lawp-test/");
     }
 
-    function _configureRegistry() internal {
+    function _deployRegistry() internal {
+        registry = new LAWPActorRegistry(admin);
         vm.startPrank(admin);
         registry.setLA2Wallet(la2Wallet);
         registry.setMVI1Wallet(mvi1Wallet);
         registry.setRiskPoolWallet(riskPoolWallet);
         registry.setDevWallet(devWallet);
         vm.stopPrank();
+    }
+
+    function _deployVaults() internal {
+        yieldVault = new LAWPYieldVault(address(cngn), admin);
+        operationalVault = new LAWPOperationalVault(address(cngn), admin);
+    }
+
+    function _deployImpactToken() internal {
+        impactToken = new LAWPImpactToken(admin, "ipfs://lawp-test/");
     }
 
     function _deployEngine() internal {
@@ -97,82 +125,79 @@ abstract contract LAWPTestBase is Test {
         );
     }
 
+    function _deployMockMultiSig() internal {
+        // Pass-through contract. Holds zero cNGN.
+        mockMultiSig = new MockMultiSig(address(engine));
+    }
+
     function _linkContracts() internal {
         vm.startPrank(admin);
-        engine.setMultiSigController(multiSig);
+        engine.setMultiSigController(address(mockMultiSig));
         yieldVault.setComplianceEngine(address(engine));
         operationalVault.setComplianceEngine(address(engine));
         impactToken.setComplianceEngine(address(engine));
         vm.stopPrank();
     }
 
-    function _seedTokens() internal {
-        // Coordinator is the relayer: funds deposits AND gas
+    function _seedAndApprove() internal {
+        // Coordinator is the sole fund provider for ALL protocol flows.
+        // ONE approval to the ENGINE covers both deposit and revenue routing.
         cngn.mintTest(coordinator, SEED_AMOUNT);
         vm.prank(coordinator);
         cngn.approve(address(engine), type(uint256).max);
 
-        // multiSig funds revenue routing (pulls from multiSig when it calls routeOperationalAllocation)
-        cngn.mintTest(multiSig, SEED_AMOUNT);
-        vm.prank(multiSig);
-        cngn.approve(address(engine), type(uint256).max);
-
-        // User balances for direct deposit tests
+        // Users for direct deposit/claim tests
         cngn.mintTest(userA, SEED_AMOUNT);
         cngn.mintTest(userB, SEED_AMOUNT);
         cngn.mintTest(userC, SEED_AMOUNT);
+    }
+
+    function _assertSetupInvariants() internal view {
+        // Only vaults hold protocol cNGN
+        assertEq(cngn.balanceOf(address(mockMultiSig)), 0, "MockMultiSig must hold zero cNGN");
+        assertEq(cngn.balanceOf(address(engine)), 0, "Engine must hold zero cNGN");
     }
 
     /*//////////////////////////////////////////////////////////////
                           HELPER UTILITIES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Creates a standard single-pool deposit with two contributors.
-    ///         Pool 1, 100_000e6 gross, userA=60%, userB=40%.
-    ///         riskFee = 10_000e6 → operationalVault
-    ///         netCapital = 90_000e6 → yieldVault
-    ///         Token 1 → userA: principal=54_000e6, BPS=6000
-    ///         Token 2 → userB: principal=36_000e6, BPS=4000
+    /// @notice Standard 2-contributor deposit: pool 1, 100_000e6 gross.
+    ///         riskFee = 10_000e6 -> operationalVault
+    ///         netCapital = 90_000e6 -> yieldVault
+    ///         Token 1 -> userA: 54_000e6, BPS=6000
+    ///         Token 2 -> userB: 36_000e6, BPS=4000
     function _setupStandardDeposit() internal {
-        address[] memory contributors = new address[](2);
-        contributors[0] = userA;
-        contributors[1] = userB;
-        uint256[] memory bps = new uint256[](2);
-        bps[0] = 6000;
-        bps[1] = 4000;
-
+        address[] memory c = new address[](2);
+        c[0] = userA;
+        c[1] = userB;
+        uint256[] memory b = new uint256[](2);
+        b[0] = 6000;
+        b[1] = 4000;
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, contributors, bps);
+        engine.processPoolDeposit(1, 100_000e6, c, b);
     }
 
-    /// @notice Routes a GRANT_INITIAL allocation to pool 1.
-    ///         10_000e6 gross:
-    ///           colSplit  = 3_000e6 → poolYieldTracker[1], yieldVault
-    ///           la2Split  = 5_000e6 → operationalBalances[la2], operationalVault
-    ///           mviSplit  = 2_000e6 → operationalBalances[mvi], operationalVault
+    /// @notice Routes revenue through MockMultiSig. Coordinator is fund provider.
+    function _routeRevenue(uint256 _poolId, uint256 _amount, LAWPStructs.FlowType _flow) internal {
+        vm.prank(coordinator);
+        mockMultiSig.execute(_poolId, _amount, _flow);
+        // Invariant: MockMultiSig always returns to zero after execution
+        assertEq(cngn.balanceOf(address(mockMultiSig)), 0, "MockMultiSig balance leaked");
+    }
+
     function _setupGrantInitial(uint256 amount) internal {
-        vm.prank(multiSig);
-        engine.routeOperationalAllocation(1, amount, LAWPStructs.FlowType.GRANT_INITIAL);
+        _routeRevenue(1, amount, LAWPStructs.FlowType.GRANT_INITIAL);
     }
 
-    /// @notice Routes a GRANT_CONTINUOUS allocation to pool 1.
     function _setupGrantContinuous(uint256 amount) internal {
-        vm.prank(multiSig);
-        engine.routeOperationalAllocation(1, amount, LAWPStructs.FlowType.GRANT_CONTINUOUS);
+        _routeRevenue(1, amount, LAWPStructs.FlowType.GRANT_CONTINUOUS);
     }
 
-    /// @notice Routes an RoC allocation to pool 1.
     function _setupRoC(uint256 amount) internal {
-        vm.prank(multiSig);
-        engine.routeOperationalAllocation(1, amount, LAWPStructs.FlowType.RoC);
+        _routeRevenue(1, amount, LAWPStructs.FlowType.RoC);
     }
 
-    /// @notice Computes the expected net capital for a given gross deposit.
-    function _netCapital(uint256 gross) internal pure returns (uint256) {
-        return gross - (gross * 1000) / 10_000;
-    }
-
-    /// @notice Builds a single-contributor array set.
     function _singleContributor(address user)
         internal
         pure
@@ -182,5 +207,9 @@ abstract contract LAWPTestBase is Test {
         c[0] = user;
         b = new uint256[](1);
         b[0] = 10_000;
+    }
+
+    function _netCapital(uint256 gross) internal pure returns (uint256) {
+        return gross - (gross * 1000) / 10_000;
     }
 }

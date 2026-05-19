@@ -5,7 +5,7 @@ import { Test } from "forge-std/Test.sol";
 import { LAWPActorRegistry } from "../../src/core/LAWPActorRegistry.sol";
 
 /// @title LAWPActorRegistryTest
-/// @notice Unit tests for LAWPActorRegistry — the centralized operational wallet directory.
+/// @notice Unit tests for LAWPActorRegistry - the centralized operational wallet directory.
 /// @dev Tests: ownership model, wallet updates, zero-address guards, event emissions,
 ///      two-step ownership transfer, and renounce lockout.
 contract LAWPActorRegistryTest is Test {

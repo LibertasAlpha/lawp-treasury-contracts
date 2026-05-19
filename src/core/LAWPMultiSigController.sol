@@ -252,7 +252,8 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
 
         // 6. Interactions: Trigger the validated mathematical routing logic.
         // Explicit Trust Boundary: The Engine relies entirely on this controller to filter out invalid or malicious executions.
-        engine.routeOperationalAllocation(_poolId, _totalAmount, _flowType);
+        // The relayer (msg.sender) is explicitly defined as the fund provider
+        engine.routeOperationalAllocation(_poolId, _totalAmount, msg.sender, _flowType);
 
         // _proposalId acts as contextual metadata for off-chain indexers
         emit ProposalExecuted(digest, _proposalId, _poolId, _totalAmount, _flowType);

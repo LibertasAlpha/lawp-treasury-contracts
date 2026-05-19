@@ -249,6 +249,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     function routeOperationalAllocation(
         uint256 _poolId,
         uint256 _totalAmount,
+        address _fundProvider,
         LAWPStructs.FlowType _flowType
     ) external override whenNotPaused nonReentrant onlyMultiSig {
         if (_totalAmount == 0) {
@@ -259,7 +260,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             // 100% of this specific routed amount is assigned to the Return of Contribution tracker
             poolRocTracker[_poolId] += _totalAmount;
 
-            cngnToken.safeTransferFrom(msg.sender, address(yieldVault), _totalAmount);
+            cngnToken.safeTransferFrom(_fundProvider, address(yieldVault), _totalAmount);
         } else if (_flowType == LAWPStructs.FlowType.GRANT_INITIAL) {
             address la2 = registry.la2Wallet();
             address mvi = registry.mvi1Wallet();
@@ -275,8 +276,10 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             operationalBalances[mvi] += mviSplit;
 
             // Physical Switchboard routing
-            cngnToken.safeTransferFrom(msg.sender, address(yieldVault), colSplit);
-            cngnToken.safeTransferFrom(msg.sender, address(operationalVault), la2Split + mviSplit);
+            cngnToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
+            cngnToken.safeTransferFrom(
+                _fundProvider, address(operationalVault), la2Split + mviSplit
+            );
         } else if (_flowType == LAWPStructs.FlowType.GRANT_CONTINUOUS) {
             address la2 = registry.la2Wallet();
             address mvi = registry.mvi1Wallet();
@@ -297,9 +300,9 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             operationalBalances[devWallet] += devSplit;
 
             // Physical Switchboard routing
-            cngnToken.safeTransferFrom(msg.sender, address(yieldVault), colSplit);
+            cngnToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
             cngnToken.safeTransferFrom(
-                msg.sender, address(operationalVault), la2Split + mviSplit + devSplit
+                _fundProvider, address(operationalVault), la2Split + mviSplit + devSplit
             );
         } else {
             revert LAWPComplianceEngine_InvalidFlowType();

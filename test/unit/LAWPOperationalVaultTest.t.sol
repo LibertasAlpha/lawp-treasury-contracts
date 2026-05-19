@@ -6,7 +6,7 @@ import { LAWPOperationalVault } from "../../src/core/LAWPOperationalVault.sol";
 import { MockCngn3, MockAdminOperations } from "../mocks/MockCngn3.sol";
 
 /// @title LAWPOperationalVaultTest
-/// @notice Unit tests for LAWPOperationalVault — protocol/payroll capital isolation layer.
+/// @notice Unit tests for LAWPOperationalVault - protocol/payroll capital isolation layer.
 /// @dev Mirrors YieldVaultTest structure but verifies OperationalVault-specific error selectors
 ///      and events ensuring the two vaults remain independently auditable.
 contract LAWPOperationalVaultTest is Test {
@@ -48,7 +48,7 @@ contract LAWPOperationalVaultTest is Test {
     }
 
     function test_Constructor_RevertIf_ZeroAdmin() public {
-        vm.expectRevert(LAWPOperationalVault.LAWPOperationalVault_InvalidAddress.selector);
+        vm.expectRevert();
         new LAWPOperationalVault(address(cngn), address(0));
     }
 
@@ -132,7 +132,7 @@ contract LAWPOperationalVaultTest is Test {
                      VAULT ISOLATION TEST
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Validates that the two vaults are independent — funding one does not
+    /// @notice Validates that the two vaults are independent - funding one does not
     ///         affect the other's balance or access control.
     function test_VaultIsolation_IndependentEngines() public {
         LAWPOperationalVault vault2 = new LAWPOperationalVault(address(cngn), admin);

@@ -76,10 +76,12 @@ interface ILAWPComplianceEngine {
     /// the Yield Vault. Drops Operational funds directly into the Operational Vault. Credits internal ledgers.
     /// @param _poolId The target deployment pool.
     /// @param _totalAmount The verified fiat-equivalent revenue entering the system.
+    /// @param _fundProvider The relayer (msg.sender of MultiSig) providing the capital.
     /// @param _flowType GRANT_INITIAL, GRANT_CONTINUOUS, or RoC.
     function routeOperationalAllocation(
         uint256 _poolId,
         uint256 _totalAmount,
+        address _fundProvider,
         LAWPStructs.FlowType _flowType
     ) external;
 

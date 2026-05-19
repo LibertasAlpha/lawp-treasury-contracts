@@ -9,7 +9,7 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 // MockAdminOperations
 // ============================================================
 // Replaces the inlined mappings with a proper external contract
-// so the token contract delegates to it — exactly as production does.
+// so the token contract delegates to it - exactly as production does.
 //
 // Key addition: `removeCanMintShouldFail` flag lets tests exercise
 // the revert path inside mint() that the original mock could never reach.
@@ -23,7 +23,7 @@ contract MockAdminOperations {
     mapping(address => bool) public canMintMap;
     mapping(address => uint256) public mintAmountMap;
 
-    /// @dev When true, removeCanMint() reverts — mirrors a broken/hostile admin contract.
+    /// @dev When true, removeCanMint() reverts - mirrors a broken/hostile admin contract.
     bool public removeCanMintShouldFail;
 
     // ---- IAdmin interface (matches production IOperations / IAdmin) ----
@@ -50,7 +50,7 @@ contract MockAdminOperations {
 
     /**
      * @dev Reverts when removeCanMintShouldFail == true, allowing tests to verify
-     * that MockCngn3.mint() rolls back the entire transaction on admin failure —
+     * that MockCngn3.mint() rolls back the entire transaction on admin failure -
      * behaviour that the old inlined mock could never exercise.
      */
     function removeCanMint(address account) external returns (bool) {
@@ -101,7 +101,7 @@ contract MockAdminOperations {
 }
 
 // ============================================================
-// IAdmin — minimal interface MockCngn3 calls into
+// IAdmin - minimal interface MockCngn3 calls into
 // ============================================================
 
 interface IAdmin {
@@ -119,7 +119,7 @@ interface IAdmin {
 // Changes vs the original mock
 // ---------------------------------------------------------------
 // [FIX-1] Delegates all access-control reads to MockAdminOperations
-//         via IAdmin — exactly matching production.  The old inlined
+//         via IAdmin - exactly matching production.  The old inlined
 //         mappings are gone.
 //
 // [FIX-2] mint() now calls adminOperationsContract.removeCanMint()
@@ -144,7 +144,7 @@ contract MockCngn3 is ERC20, Ownable, ReentrancyGuard {
 
     // ---- State ----
     address public trustedForwarderContract;
-    address public adminOperationsContract; // now actually called — not dead storage
+    address public adminOperationsContract; // now actually called - not dead storage
     bool private _paused;
 
     // ---- Modifiers ----
@@ -229,7 +229,7 @@ contract MockCngn3 is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Mirrors production transferFrom() — same delegation + redemption path.
+     * @dev Mirrors production transferFrom() - same delegation + redemption path.
      */
     function transferFrom(address from, address to, uint256 amount)
         public
@@ -296,7 +296,7 @@ contract MockCngn3 is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev [FIX-4] Restricted to owner — prevents accidental bypass of the real
+     * @dev [FIX-4] Restricted to owner - prevents accidental bypass of the real
      * mint flow in tests.  Use only for seeding balances in test setup, never
      * as a substitute for testing mint() itself.
      */
@@ -346,7 +346,7 @@ contract MockCngn3 is ERC20, Ownable, ReentrancyGuard {
      * @dev Re-introduced so the pause guard fires at the internal ERC-20 layer,
      * exactly as in production where _beforeTokenTransfer is whenNotPaused.
      * This catches any hypothetical internal call path that bypasses the public
-     * function modifier — keeping pause enforcement semantically identical.
+     * function modifier - keeping pause enforcement semantically identical.
      */
     function _update(address from, address to, uint256 amount) internal override whenNotPaused {
         super._update(from, to, amount);
@@ -367,7 +367,7 @@ contract MockCngn3 is ERC20, Ownable, ReentrancyGuard {
 
     /**
      * @dev Convenience: mint tokens to externalUser and configure whitelists
-     * via the admin contract — keeps test setup going through the same
+     * via the admin contract - keeps test setup going through the same
      * contract boundaries as production.
      */
     function setupRedemptionScenario(

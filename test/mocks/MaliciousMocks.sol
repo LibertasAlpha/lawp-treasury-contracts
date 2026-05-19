@@ -27,7 +27,7 @@ contract MaliciousRelayer {
         uint256[] calldata _bpsShares
     ) external {
         engine.processPoolDeposit(_poolId, _amount, _contributors, _bpsShares);
-        // Second call must revert — PoolAlreadyExists
+        // Second call must revert - PoolAlreadyExists
         engine.processPoolDeposit(_poolId, _amount, _contributors, _bpsShares);
     }
 }
