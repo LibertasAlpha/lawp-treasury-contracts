@@ -12,7 +12,7 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 ## Key Features
 
-- **Zero-Custody Switchboard:** The Compliance Engine holds a 0 balance, routing funds directly from the off-chain Injector Wallet to specific vaults in a single hop.
+- **Zero-Custody Switchboard:** The Compliance Engine holds a 0 balance, routing funds directly from the off-chain Relayer or Injector Wallet to specific vaults in a single hop.
 - **Dual-Treasury Segregation:** Pure physical separation of Investor Funds (`LAWPYieldTreasury`) and Operational/Payroll Funds (`LAWPOperationalTreasury`).
 - **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
 - **Trustless Revenue Routing:** Enforces strict mathematical splits for Initial Grants (30/50/20) and Continuous Grants (10/55/25/10) without manual intervention.
@@ -26,7 +26,7 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 - **LAWPComplianceEngine (The Zero-Custody Switchboard)**
   - **Responsibility:** Calculates proportional equity, deducts systemic risk fees, and executes mathematical routing. Updates internal accounting ledgers and instructs the movement of tokens without holding funds.
-  - **Key Functions:** `processPoolDeposit()`, `validateAndRoute()`, `claimYield()`, `claimOperationalFunds()`
+  - **Key Functions:** `processPoolDeposit()`, `routeOperationalAllocation()`, `claimYield()`, `claimOperationalFunds()`
 
 - **LAWPYieldTreasury (Vault A: Investor Funds)**
   - **Responsibility:** Subordinate vault holding Net Principal, Return of Contribution (RoC), and pending Yield. Contains no public deposit functions to prevent orphaned capital.
@@ -55,7 +55,8 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 ### Component Interaction Flow
 
 1. **Real World to Bridge**
-   - Operators convert fiat from 3 segregated physical bank accounts (Activator, Service, RoC) to cNGN in the "Injector Wallet" and sign an EIP-712 payload.
+   - Operators convert fiat from 3 segregated physical bank accounts (Activator, Service, RoC) to cNGN in the "Injector Wallet".
+   - Board members observe a fiat to CNGN on-ramp in the Injector Wallet. They construct the EIP-712 payload (`proposalId`, `poolId`, `deadline`, etc.) and sign it locally.
 
 2. **User (Relayer) -> LAWPMultiSigController**
    - Calls `executeProposal` with an EIP-712 payload containing signatures, the `poolId`, the generated `totalAmount`, and the `flowType`.
@@ -64,7 +65,7 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
    - Validates the digest, checks the 3-of-5 signature threshold, and verifies cryptographic replay protection (nonce mapping).
 
 4. **LAWPMultiSigController -> LAWPComplianceEngine**
-   - Calls `validateAndRoute()` with the validated revenue parameters.
+   - Calls `routeOperationalAllocation()` with the validated revenue parameters.
 
 5. **LAWPComplianceEngine -> Treasuries & Internal Ledgers**
    - The Engine pulls the Yield portion directly from the Injector Wallet to the `LAWPYieldTreasury`.
@@ -252,7 +253,7 @@ make configure-protocol-testnet
 - [x] Phase 4: Off-Chain Verification (Multi-Sig & EIP-712).
 - [x] Phase 5: Stateful Invariant Fuzzing & O(1) Gas Optimizations.
 - [x] Phase 6: Institutional Timelock Governance & Deployment Scripts.
-- [ ] Phase 7: Dual-Treasury & Switchboard Refactoring.
+- [x] Phase 7: Dual-Treasury & Switchboard Refactoring.
 - [ ] Phase 8: External Independent Audit.
 - [ ] Phase 9: Base Mainnet Launch.
 
