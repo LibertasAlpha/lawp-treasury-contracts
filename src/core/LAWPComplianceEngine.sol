@@ -403,6 +403,11 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         return claimableYield + claimableRoc;
     }
 
+    /// @inheritdoc ILAWPComplianceEngine
+    function isPoolActive(uint256 poolId) external view returns (bool) {
+        return pools[poolId].exists;
+    }
+
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/

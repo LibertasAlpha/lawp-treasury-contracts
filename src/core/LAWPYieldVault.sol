@@ -50,9 +50,8 @@ contract LAWPYieldVault is ILAWPYieldVault, Ownable2Step, ReentrancyGuard {
     /// @param _cngnToken Address of the stablecoin (cNGN).
     /// @param _initialAdmin Address of the deployer or Timelock controller.
     constructor(address _cngnToken, address _initialAdmin) Ownable(_initialAdmin) {
-        if (_cngnToken == address(0) || _initialAdmin == address(0)) {
-            revert LAWPYieldVault_InvalidAddress();
-        }
+        if (_cngnToken == address(0))  revert LAWPYieldVault_InvalidAddress();
+
         cngnToken = IERC20(_cngnToken);
     }
 
@@ -67,7 +66,8 @@ contract LAWPYieldVault is ILAWPYieldVault, Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Links the Compliance Engine to the Vault.
-    /// @dev Callable only by the Admin/Timelock. Crucial for establishing the physical trust boundary.
+    /// @dev Callable only by the Admin/Timelock. 
+    ///      Crucial for establishing the physical trust boundary.
     /// @param _engine The address of the new LAWPComplianceEngine contract.
     function setComplianceEngine(address _engine) external override onlyOwner {
         if (_engine == address(0)) revert LAWPYieldVault_InvalidAddress();
@@ -83,7 +83,8 @@ contract LAWPYieldVault is ILAWPYieldVault, Ownable2Step, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPYieldVault
-    /// @dev Executes the transfer using SafeERC20. Relies on the ERC20 contract to revert natively if funds are insufficient.
+    /// @dev Executes the transfer using SafeERC20. 
+    //       Relies on the ERC20 contract to revert natively if funds are insufficient.
     function executeTransfer(address _to, uint256 _amount)
         external
         override

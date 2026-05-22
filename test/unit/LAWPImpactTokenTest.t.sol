@@ -251,7 +251,7 @@ contract LAWPImpactTokenTest is Test {
         vm.prank(address(mockEngine));
         token.mint(userA, 90_000e6, 10_000, 1);
 
-        // pendingYield == 0 → hook must silently skip
+        // pendingYield == 0 -> hook must silently skip
         mockEngine.setPendingYield(0);
 
         vm.prank(userA);
@@ -272,63 +272,6 @@ contract LAWPImpactTokenTest is Test {
 
         assertTrue(mockEngine.claimYieldCalled(), "Hook MUST fire when yield > 0");
         assertEq(token.ownerOf(1), userB);
-    }
-
-    function test_TransferHook_CEI_SuperUpdateFirst() public {
-        // The _update override calls super._update() FIRST (ownership transfers),
-        // THEN conditionally triggers yield claim. This test verifies ownership
-        // has already changed when the yield call happens.
-        vm.prank(address(mockEngine));
-        token.mint(userA, 90_000e6, 10_000, 1);
-
-        mockEngine.setPendingYield(1000e6);
-
-        vm.prank(userA);
-        token.transferFrom(userA, userB, 1);
-
-        // After hook: userB is the owner
-        assertEq(token.ownerOf(1), userB);
-        // And yield was claimed (hook fired)
-        assertTrue(mockEngine.claimYieldCalled());
-    }
-
-    function test_TransferHook_DoesNotFireOnBurn() public {
-        vm.prank(address(mockEngine));
-        token.mint(userA, 90_000e6, 10_000, 1);
-
-        mockEngine.setPendingYield(9999e6);
-
-        // Burning: _to == address(0) - hook must NOT fire
-        // ERC721 burn() is internal; simulate via ERC721Burnable or direct ownership check
-        // In this contract there is no public burn, so we verify the condition guard:
-        // "from != 0 && to != 0" - burn path has to==0, so no claim.
-        // We can test this by checking the hook did not fire after a normal transfer (to != 0)
-        // and trust the conditional check in source code for burns.
-        // The mint path (from==0) is already covered above.
-        assertFalse(mockEngine.claimYieldCalled());
-    }
-
-    function test_TransferHook_NoFireWhenEngineNotLinked() public {
-        // Deploy a fresh token without a linked engine
-        LAWPImpactToken freshToken = new LAWPImpactToken(admin, "ipfs://x/");
-
-        // Manually mint without engine for test setup (use admin as engine)
-        vm.prank(admin);
-        freshToken.setComplianceEngine(address(mockEngine));
-
-        vm.prank(address(mockEngine));
-        freshToken.mint(userA, 90_000e6, 10_000, 1);
-
-        // Unlink the engine
-        vm.prank(admin);
-        freshToken.setComplianceEngine(address(99)); // Different mock, no claimYield
-
-        // Transfer should NOT revert (engine != address(0) so hook fires to address(99)
-        // which has no code - let's instead test the address(0) path by checking guard)
-        // The guard is: complianceEngine != address(0).
-        // This is implicitly tested - if complianceEngine is address(0), no call.
-        // Already covered by the construction test above.
-        assertTrue(true); // Guard confirmed by code review + mint test
     }
 
     /*//////////////////////////////////////////////////////////////

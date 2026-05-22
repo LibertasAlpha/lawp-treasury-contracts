@@ -111,4 +111,7 @@ interface ILAWPComplianceEngine {
 
     /// @notice Calculates the exact pending cNGN yield for a specific token.
     function calculateProportionalYield(uint256 _tokenId) external view returns (uint256);
+
+    /// @notice Checks if a given pool ID corresponds to an active project pool.
+    function isPoolActive(uint256 poolId) external view returns (bool);
 }

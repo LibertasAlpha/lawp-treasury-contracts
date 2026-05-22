@@ -12,6 +12,12 @@ interface ILAWPImpactToken is IERC721 {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Emitted when the Compliance Engine address is updated.
+    event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
+
+    /// @notice Emitted when the base URI for token metadata is updated.
+    event BaseURIUpdated(string oldURI, string newURI);
+
     /// @notice Emitted when an Impact Token is minted representing a contributor's equity.
     event ImpactTokenMinted(
         uint256 indexed tokenId, address indexed owner, uint256 netPrincipal, uint256 poolShareBPS

@@ -30,12 +30,6 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     error LAWPImpactToken_InvalidPoolId();
 
     /*//////////////////////////////////////////////////////////////
-                                 EVENTS
-    //////////////////////////////////////////////////////////////*/
-    event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
-    event BaseURIUpdated(string oldURI, string newURI);
-
-    /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     uint256 private _nextTokenId = 1;
@@ -46,7 +40,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     /// @notice The base URI for all token metadata. Since all unique data is onchain, this is a static URI pointing to a generic JSON schema on IPFS that can be used for all tokens.
     string public baseTokenURI;
 
-    mapping(uint256 => LAWPStructs.TokenData) private _tokenData;
+    mapping(uint256 tokenId => LAWPStructs.TokenData tokenData) private _tokenData;
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -58,12 +52,9 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     }
 
     constructor(address _initialAdmin, string memory _uri)
-        ERC721("LAWP Impact Equity", "LAWP-IE")
+        ERC721("LAWP Impact Token", "LAWP-IT")
         Ownable(_initialAdmin)
     {
-        if (_initialAdmin == address(0)) {
-            revert LAWPImpactToken_ZeroAddress();
-        }
         if (bytes(_uri).length == 0) revert LAWPImpactToken_InvalidBaseURI();
 
         baseTokenURI = _uri;

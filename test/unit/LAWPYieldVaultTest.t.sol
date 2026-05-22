@@ -99,12 +99,13 @@ contract LAWPYieldVaultTest is Test {
     function test_ExecuteTransfer_Success() public {
         uint256 amount = 50_000e6;
         uint256 recipientBalBefore = cngn.balanceOf(recipient);
+        uint256 vaultBalBefore = cngn.balanceOf(address(vault));
 
         vm.prank(engine);
         vault.executeTransfer(recipient, amount);
 
         assertEq(cngn.balanceOf(recipient), recipientBalBefore + amount);
-        assertEq(cngn.balanceOf(address(vault)), 1_000_000e6 - amount);
+        assertEq(cngn.balanceOf(address(vault)), vaultBalBefore - amount);
     }
 
     function test_ExecuteTransfer_EmitsEvent() public {
