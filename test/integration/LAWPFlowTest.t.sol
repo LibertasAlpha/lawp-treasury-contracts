@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { LAWPTestBase } from "../base/LAWPTestBase.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
+import { console2 } from "forge-std/Script.sol";
 
 /// @title LAWPFlowTest
 /// @notice End-to-end integration test covering the full LAWP Protocol lifecycle.
@@ -28,13 +29,14 @@ contract LAWPFlowTest is LAWPTestBase {
         for (uint160 i = 0; i < 10; i++) {
             users[i] = address(100 + i);
             bps[i] = 1000; // 10% each
-            cngn.mintTest(users[i], 1_000_000e6);
         }
 
         uint256 grossDeposit = 100_000e6;
         uint256 riskFee = 10_000e6; // 10%
         // uint256 netCapital = 90_000e6;
         uint256 perUserNet = 9_000e6; // 10% of netCapital
+
+        _seedAndApprove();
 
         vm.prank(coordinator);
         engine.processPoolDeposit(1, grossDeposit, users, bps);
@@ -86,8 +88,10 @@ contract LAWPFlowTest is LAWPTestBase {
         assertEq(impactToken.ownerOf(1), buyer);
 
         // -- STEP 4: More revenue -----------------------------------------------
-        // GRANT_CONTINUOUS: 20_000e6 -> 10% collective = 2_000e6
-        // RoC: 10_000e6 -> buyer's 10% = 1_000e6 (capped at principal 9_000e6)
+        // GRANT_CONTINUOUS for buyer: 20_000e6 -> 10% collective = 2_000e6
+        // RoC for Buyer: 10_000e6 -> buyer's 10% = 1_000e6 (capped at principal 9_000e6)
+
+        // GRANT_CONTINUOUS for la2Wallet: 20_000e6 -> 55% of operational = 11_000e6
         _routeRevenue(1, 20_000e6, LAWPStructs.FlowType.GRANT_CONTINUOUS);
         _routeRevenue(1, 10_000e6, LAWPStructs.FlowType.RoC);
 
@@ -104,9 +108,9 @@ contract LAWPFlowTest is LAWPTestBase {
         // -- STEP 6: LA2 claims operational funds ------------------------------
         uint256 la2BalBefore = cngn.balanceOf(la2Wallet);
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(la2Wallet);
 
-        assertEq(cngn.balanceOf(la2Wallet), la2BalBefore + la2Split);
+        assertEq(cngn.balanceOf(la2Wallet), la2BalBefore + la2Split + 11_000e6);
         assertEq(engine.operationalBalances(la2Wallet), 0);
 
         // Final vault integrity check
@@ -192,11 +196,11 @@ contract LAWPFlowTest is LAWPTestBase {
         uint256 devBal = cngn.balanceOf(devWallet);
 
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(la2Wallet);
         vm.prank(mvi1Wallet);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(mvi1Wallet);
         vm.prank(devWallet);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(devWallet);
 
         assertEq(cngn.balanceOf(la2Wallet), la2Bal + 5_500e6);
         assertEq(cngn.balanceOf(mvi1Wallet), mviBal + 2_500e6);

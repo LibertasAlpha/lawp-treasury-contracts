@@ -22,16 +22,16 @@ interface ILAWPActorRegistry {
     /// @return Returns the LA2 (Project Management) wallet address.
     function la2Wallet() external view returns (address);
 
-    /// @notice Funds logistics, operational overhead, 
+    /// @notice Funds logistics, operational overhead,
     ///         and is the source pool for the dynamic MVI DApp Team Grants.
     ///         Increased ecosystem funding for governance and new MVI launches.
     /// @dev    This wallet is responsible for receiving protocol fees and managing treasury funds.
     /// @return Returns the MVI1 (System Treasury) wallet address.
     function mvi1Wallet() external view returns (address);
 
-    /// @notice Funds risk mitigation efforts, coverage, 
+    /// @notice Funds risk mitigation efforts, coverage,
     ///         and is the source pool for the dynamic MVI Risk Pool Grants.
-    /// @dev    This wallet is responsible for managing the risk pool 
+    /// @dev    This wallet is responsible for managing the risk pool
     ///         and ensuring proper risk mitigation.
     /// @return Returns the Risk Management Pool wallet address.
     function riskPoolWallet() external view returns (address);

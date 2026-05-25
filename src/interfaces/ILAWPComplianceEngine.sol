@@ -55,7 +55,7 @@ interface ILAWPComplianceEngine {
 
     /// @notice Processes incoming investor capital and orchestrates physical vault drops.
     /// @dev Pulls `_grossAmount` from msg.sender. Drops Risk Fee into Operational Vault.
-    /// Drops `netCapital` into Yield Vault. Mints fractional ERC-721 equity.
+    ///      Drops `netCapital` into Yield Vault. Mints fractional ERC-721 equity.
     /// @param _poolId The unique deployment pool identifier.
     /// @param _grossAmount Total cNGN deposited before risk fee deduction.
     /// @param _contributors Array of investor wallet addresses.
@@ -73,7 +73,7 @@ interface ILAWPComplianceEngine {
 
     /// @notice Orchestrates the mathematical split and physical routing of external revenue.
     /// @dev Pulls `_totalAmount` directly from the `_fundProvider`. Drops Yield/RoC directly into
-    /// the Yield Vault. Drops Operational funds directly into the Operational Vault. Credits internal ledgers.
+    ///      the Yield Vault. Drops Operational funds directly into the Operational Vault. Credits internal ledgers.
     /// @param _poolId The target deployment pool.
     /// @param _totalAmount The verified fiat-equivalent revenue entering the system.
     /// @param _fundProvider The relayer (msg.sender of MultiSig) providing the capital.
@@ -91,7 +91,8 @@ interface ILAWPComplianceEngine {
 
     /// @notice Allows operational teams to claim their allocated revenue splits.
     /// @dev Relies on the `operationalBalances` ledger. Follows strict CEI pattern.
-    function claimOperationalFunds() external;
+    /// @param _wallet The operational actor's wallet address. Can be LA2, Dev, etc.
+    function claimOperationalFunds(address _wallet) external;
 
     /// @notice Allows an investor to pull their accrued yield for a specific token.
     /// @dev Calculates un-claimed yield against the O(1) `poolYieldTracker`.
@@ -106,12 +107,11 @@ interface ILAWPComplianceEngine {
                                VIEW HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the pending pullable balance for an operational wallet.
-    function getOperationalBalance(address _wallet) external view returns (uint256);
-
     /// @notice Calculates the exact pending cNGN yield for a specific token.
+    /// @param _tokenId The ERC-721 Impact Token ID.
     function calculateProportionalYield(uint256 _tokenId) external view returns (uint256);
 
     /// @notice Checks if a given pool ID corresponds to an active project pool.
-    function isPoolActive(uint256 poolId) external view returns (bool);
+    /// @param _poolId The unique deployment pool identifier.
+    function isPoolActive(uint256 _poolId) external view returns (bool);
 }

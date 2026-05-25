@@ -55,7 +55,9 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
         ERC721("LAWP Impact Token", "LAWP-IT")
         Ownable(_initialAdmin)
     {
-        if (bytes(_uri).length == 0) revert LAWPImpactToken_InvalidBaseURI();
+        if (bytes(_uri).length == 0) {
+            revert LAWPImpactToken_InvalidBaseURI();
+        }
 
         baseTokenURI = _uri;
     }
@@ -178,8 +180,8 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
         nonReentrant
         returns (address)
     {
-        address from = super._update(_to, _tokenId, _auth);
-
+        address from = _ownerOf(_tokenId);
+        
         // If it is a transfer (not minting or burning) and the engine is linked
         if (from != address(0) && _to != address(0) && complianceEngine != address(0)) {
             // 1. Ask the engine exactly how much is owed to this specific token
@@ -192,6 +194,6 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
             }
         }
 
-        return from;
+        return super._update(_to, _tokenId, _auth);
     }
 }

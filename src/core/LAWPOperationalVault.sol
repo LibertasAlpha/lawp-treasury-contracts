@@ -51,7 +51,7 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
     /// @param _initialAdmin Address of the deployer or Timelock controller.
     constructor(address _cngnToken, address _initialAdmin) Ownable(_initialAdmin) {
         if (_cngnToken == address(0)) revert LAWPOperationalVault_InvalidAddress();
-        
+
         cngnToken = IERC20(_cngnToken);
     }
 

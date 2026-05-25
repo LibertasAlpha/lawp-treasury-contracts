@@ -9,7 +9,7 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 
 /// @title LAWPComplianceEngineTest
 /// @notice Unit tests for LAWPComplianceEngine - the core protocol logic contract.
-/// @dev Tests: constructor immutables and guards, admin functions 
+/// @dev Tests: constructor immutables and guards, admin functions
 ///     (multi-sig controller, risk fee, pause), processPoolDeposit (success, edge cases, reverts),
 ///     routeOperationalAllocation (success, reverts), claimYield (success, edge cases, reverts),
 ///     claimOperationalFunds (success, edge cases, reverts), and adversarial/replay scenarios.
@@ -519,7 +519,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
         uint256 balBefore = cngn.balanceOf(la2Wallet);
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(la2Wallet);
 
         assertEq(cngn.balanceOf(la2Wallet), balBefore + 5_000e6);
         assertEq(engine.operationalBalances(la2Wallet), 0);
@@ -529,18 +529,18 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_ClaimOperationalFunds_CEI_ZeroBeforeTransfer() public {
         _setupGrantInitial(10_000e6);
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(la2Wallet);
 
         // Second claim must fail - balance zeroed before transfer
         vm.prank(la2Wallet);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_NoOperationalFunds.selector);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(la2Wallet);
     }
 
     function test_ClaimOperationalFunds_RevertIf_NothingToClaim() public {
         vm.prank(attacker);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_NoOperationalFunds.selector);
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(attacker);
     }
 
     /*//////////////////////////////////////////////////////////////

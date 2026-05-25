@@ -16,7 +16,15 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 
 /// @title LAWPComplianceEngine
 /// @author Obinna Franklin Duru (BinnaDev)
-/// @notice The Zero-Custody Switchboard and Deterministic Accounting Layer for strict LTD/GTE fractional revenue routing.
+/// @notice The Zero-Custody Switchboard and Deterministic Accounting Layer
+///         for strict LTD/GTE fractional revenue routing.
+/// @dev LAWPComplianceEngine is the core orchestrator of the LAWP Treasury system, responsible for:
+///      1. Processing incoming capital and minting fractional equity tokens.
+///      2. Calculating and routing off-chain revenue splits with strict mathematical precision.
+///      3. Maintaining O(1) cumulative yield trackers and a pull-based claiming mechanism
+///         for investors and operational actors.
+///      The contract is fortified with robust access controls, circuit breakers, and
+///      comprehensive event logging to ensure security, transparency, and efficient operations.
 contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
@@ -230,8 +238,14 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         // Interactions: Securely transfer funds and mint fractional equity.
         // 3. Pull total gross amount from sender to the Treasury Vault.
         if (riskFee > 0) {
+            address riskPoolWallet = registry.riskPoolWallet();
+            if (riskPoolWallet == address(0)) revert LAWPComplianceEngine_InvalidActor();
+
+            operationalBalances[riskPoolWallet] += riskFee;
+
             cngnToken.safeTransferFrom(msg.sender, address(operationalVault), riskFee);
         }
+
         cngnToken.safeTransferFrom(msg.sender, address(yieldVault), _grossAmount);
         emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
 
@@ -316,21 +330,23 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
-    function claimOperationalFunds() external override nonReentrant {
-        uint256 amount = operationalBalances[msg.sender];
+    function claimOperationalFunds(address _wallet) external override nonReentrant {
+        uint256 amount = operationalBalances[_wallet];
         if (amount == 0) revert LAWPComplianceEngine_NoOperationalFunds();
 
         // Strict CEI Pattern
-        operationalBalances[msg.sender] = 0;
+        operationalBalances[_wallet] = 0;
 
-        operationalVault.executeTransfer(msg.sender, amount);
+        operationalVault.executeTransfer(_wallet, amount);
 
-        emit OperationalFundsClaimed(msg.sender, amount);
+        emit OperationalFundsClaimed(_wallet, amount);
     }
 
     /// @inheritdoc ILAWPComplianceEngine
     function claimYield(uint256 _tokenId) external override nonReentrant {
         address tokenOwner = impactToken.ownerOf(_tokenId);
+
+        if (msg.sender != tokenOwner && msg.sender != address(impactToken)) revert LAWPComplianceEngine_NotTokenOwner(_tokenId);
 
         uint256 totalClaim = _claimYieldForToken(_tokenId, tokenOwner);
         if (totalClaim == 0) revert LAWPComplianceEngine_NothingToClaim();
@@ -372,11 +388,6 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
-    function getOperationalBalance(address _wallet) external view override returns (uint256) {
-        return operationalBalances[_wallet];
-    }
-
-    /// @inheritdoc ILAWPComplianceEngine
     function calculateProportionalYield(uint256 _tokenId) external view override returns (uint256) {
         // ============================================================================
         // O(1) CUMULATIVE MATH ENGINE (Read-Only)
@@ -412,11 +423,14 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Calculates the accurate Continuous Yield and RoC owed, processes state updates, and emits events.
-    /// @dev Silently returns 0 if no funds are claimable to facilitate uninterrupted batch processing.
-    /// @param _tokenId The specific ID of the Impact Token.
-    /// @param _tokenOwner The explicitly pre-fetched owner of the token to guarantee correct event emission.
-    /// @return claimable The aggregate CNGN amount owed to the token.
+    /// @notice            Calculates the accurate Continuous Yield and RoC owed,
+    ///                    processes state updates, and emits events.
+    /// @dev               Silently returns 0 if no funds are claimable to
+    ///                    facilitate uninterrupted batch processing.
+    /// @param _tokenId    The specific ID of the Impact Token.
+    /// @param _tokenOwner The explicitly pre-fetched owner of the token to
+    ///                    guarantee correct event emission.
+    /// @return            claimable The aggregate CNGN amount owed to the token.
     function _claimYieldForToken(uint256 _tokenId, address _tokenOwner)
         internal
         returns (uint256 claimable)

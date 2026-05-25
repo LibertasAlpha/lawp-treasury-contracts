@@ -19,19 +19,19 @@ contract LAWPActorRegistry is ILAWPActorRegistry, Ownable2Step {
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice LA2 (Project Management) wallet address responsible for 
+    /// @notice LA2 (Project Management) wallet address responsible for
     ///         High allocation for operational stability and factory upkeep.
     address public la2Wallet;
 
-    /// @notice MVI1 (System Treasury) wallet address responsible for 
+    /// @notice MVI1 (System Treasury) wallet address responsible for
     ///         Increased ecosystem funding for governance and new MVI launches.
     address public mvi1Wallet;
 
-    /// @notice Risk Management Pool wallet address responsible for 
+    /// @notice Risk Management Pool wallet address responsible for
     ///         holding funds allocated for risk mitigation and coverage.
     address public riskPoolWallet;
 
-    /// @notice DApp Team (Dev) wallet address responsible for 
+    /// @notice DApp Team (Dev) wallet address responsible for
     ///         Direct, fixed allocation for continuous technical support and platform innovation.
     address public devWallet;
 

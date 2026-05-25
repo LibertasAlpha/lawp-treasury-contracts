@@ -76,13 +76,13 @@ contract ReentrantOperationalClaimer {
 
     function attack() external {
         attackFired = false;
-        engine.claimOperationalFunds();
+        engine.claimOperationalFunds(msg.sender);
     }
 
     receive() external payable {
         if (!attackFired) {
             attackFired = true;
-            engine.claimOperationalFunds(); // Must revert
+            engine.claimOperationalFunds(msg.sender); // Must revert
         }
     }
 }

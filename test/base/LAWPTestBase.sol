@@ -71,7 +71,7 @@ abstract contract LAWPTestBase is Test {
 
     uint256 public constant RISK_FEE_BPS = 1000;
     uint256 public constant TOTAL_BPS = 10_000;
-    uint256 public constant SEED_AMOUNT = 10_000_000e6;
+    uint256 public constant SEED_AMOUNT = 100_000_000e6;
 
     /*//////////////////////////////////////////////////////////////
                                SETUP

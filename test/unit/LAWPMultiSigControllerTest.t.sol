@@ -11,7 +11,7 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 /// @dev Tests: construction, board management, EIP-712 proposal digest, signature
 ///      verification (ordering, malleability, duplicates), replay protection, and
 ///      the updated fund-provider flow where the RELAYER is the ERC20 source.
-contract LAWPMultiSigControllerTest is LAWPTestBase{
+contract LAWPMultiSigControllerTest is LAWPTestBase {
     LAWPMultiSigController public controller;
 
     // EOA signers (private keys deterministic for testing)
@@ -337,6 +337,8 @@ contract LAWPMultiSigControllerTest is LAWPTestBase{
     }
 
     function test_ExecuteProposal_RevertIf_WrongSignatureLength() public {
+        _setupStandardDeposit();
+
         uint256 deadline = block.timestamp + 1 hours;
         // Only 2 sigs for a threshold-3 controller (wrong: 2*65 vs 3*65)
         bytes memory sigs = new bytes(130); // 2 * 65
@@ -349,6 +351,8 @@ contract LAWPMultiSigControllerTest is LAWPTestBase{
     }
 
     function test_ExecuteProposal_RevertIf_NonSigner() public {
+        _setupStandardDeposit();
+
         uint256 amount = 10_000e6;
         uint256 deadline = block.timestamp + 1 hours;
         bytes32 digest =
@@ -366,6 +370,8 @@ contract LAWPMultiSigControllerTest is LAWPTestBase{
     }
 
     function test_ExecuteProposal_RevertIf_UnorderedSigners() public {
+        _setupStandardDeposit();
+
         uint256 amount = 10_000e6;
         uint256 deadline = block.timestamp + 1 hours;
         bytes32 digest =
@@ -396,6 +402,8 @@ contract LAWPMultiSigControllerTest is LAWPTestBase{
     }
 
     function test_ExecuteProposal_RevertIf_DuplicateSigners() public {
+        _setupStandardDeposit();
+
         uint256 amount = 10_000e6;
         uint256 deadline = block.timestamp + 1 hours;
         bytes32 digest =

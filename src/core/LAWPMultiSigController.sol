@@ -12,9 +12,9 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 /// @title LAWPMultiSigController
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Safe-inspired off-chain verification bridge utilizing EIP-712 ECDSA signatures.
-/// @dev Gathers off-chain signatures from the Community Board to 
-///      validate real-world Planbok deposits, then securely triggers the Compliance Engine. 
-///      Designed intentionally narrower than Safe to minimize attack surfaces, 
+/// @dev Gathers off-chain signatures from the Community Board to
+///      validate real-world Planbok deposits, then securely triggers the Compliance Engine.
+///      Designed intentionally narrower than Safe to minimize attack surfaces,
 ///      focusing purely on verifying payload authenticity.
 contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, ReentrancyGuard, EIP712 {
     /*//////////////////////////////////////////////////////////////
@@ -39,7 +39,7 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     //////////////////////////////////////////////////////////////*/
 
     /// @notice The Compliance Engine contract where executed payloads are sent.
-    /// @dev    Represents the explicit trust boundary. 
+    /// @dev    Represents the explicit trust boundary.
     ///         The engine only accepts commands from this specific controller.
     ILAWPComplianceEngine public immutable engine;
 
@@ -50,7 +50,7 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     );
 
     /// @notice Hard upper bound for active board members.
-    /// @dev    Anti-griefing measure to completely eliminate 
+    /// @dev    Anti-griefing measure to completely eliminate
     ///         unbounded loops during signature validation.
     uint256 public constant MAX_SIGNERS = 20;
 
@@ -85,7 +85,9 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
         address[] memory _initialSigners,
         uint256 _initialThreshold
     ) Ownable(_admin) EIP712("LAWP MultiSig", "1") {
-        if (_engine == address(0)) revert LAWPMultiSigController_ZeroAddress();
+        if (_engine == address(0)) {
+            revert LAWPMultiSigController_ZeroAddress();
+        }
 
         uint256 length = _initialSigners.length;
         if (length == 0 || _initialThreshold == 0 || _initialThreshold > length) {
@@ -120,15 +122,15 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     /// @inheritdoc ILAWPMultiSigController
     /// @notice     OFF-CHAIN ASSUMPTION:
     ///             1. Board members observe a CNGN on-ramp in the Planbok account.
-    ///             2. They construct the payload (`proposalId`, `poolId`, `deadline`, etc.) 
+    ///             2. They construct the payload (`proposalId`, `poolId`, `deadline`, etc.)
     ///             and sign it locally.
-    ///             3. A relayer collects `threshold` number of signatures, 
+    ///             3. A relayer collects `threshold` number of signatures,
     ///             sorts them by signer address, and submits this transaction.
 
-    ///             Execution is permissionless; But the executor must pay the gas, 
+    ///             Execution is permissionless; But the executor must pay the gas,
     ///             holds the CNGN to submit, and submit valid signatures.
-    ///             Executor must approve the Compliance Engine to spend the CNGN 
-    ///             before calling this function, the Compliance Engine will pull 
+    ///             Executor must approve the Compliance Engine to spend the CNGN
+    ///             before calling this function, the Compliance Engine will pull
     ///             the totalAmount from the executor's address as part of the routing logic.
     function executeProposal(
         uint256 _proposalId,
