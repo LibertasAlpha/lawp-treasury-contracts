@@ -346,7 +346,9 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     function claimYield(uint256 _tokenId) external override nonReentrant {
         address tokenOwner = impactToken.ownerOf(_tokenId);
 
-        if (msg.sender != tokenOwner && msg.sender != address(impactToken)) revert LAWPComplianceEngine_NotTokenOwner(_tokenId);
+        if (msg.sender != tokenOwner && msg.sender != address(impactToken)) {
+            revert LAWPComplianceEngine_NotTokenOwner(_tokenId);
+        }
 
         uint256 totalClaim = _claimYieldForToken(_tokenId, tokenOwner);
         if (totalClaim == 0) revert LAWPComplianceEngine_NothingToClaim();

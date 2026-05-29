@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { LAWPTestBase } from "../base/LAWPTestBase.sol";
 import { LAWPMultiSigController } from "../../src/core/LAWPMultiSigController.sol";
-import { LAWPComplianceEngine } from "../../src/core/LAWPComplianceEngine.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 
 /// @title LAWPMultiSigControllerTest

@@ -3,8 +3,6 @@ pragma solidity ^0.8.24;
 
 import { LAWPTestBase } from "../base/LAWPTestBase.sol";
 import { LAWPComplianceEngine } from "../../src/core/LAWPComplianceEngine.sol";
-import { LAWPYieldVault } from "../../src/core/LAWPYieldVault.sol";
-import { LAWPOperationalVault } from "../../src/core/LAWPOperationalVault.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 
 /// @title LAWPComplianceEngineTest

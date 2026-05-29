@@ -181,7 +181,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
         returns (address)
     {
         address from = _ownerOf(_tokenId);
-        
+
         // If it is a transfer (not minting or burning) and the engine is linked
         if (from != address(0) && _to != address(0) && complianceEngine != address(0)) {
             // 1. Ask the engine exactly how much is owed to this specific token

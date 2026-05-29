@@ -52,6 +52,26 @@ simulate-configure:
 	forge script script/Configure.s.sol:Configure --rpc-url $(RPC_URL) -vvvv
 
 # ==============================================================================
+# ANVIL LOCAL DEPLOYMENTS (3-step sequence against local Anvil node)
+# REQUIRES: Anvil running on 127.0.0.1:8545 and .env populated
+# Run in order: deploy-mocks-anvil -> deploy-core-anvil -> configure-anvil
+# After each step, copy printed contract addresses into .env
+# ==============================================================================
+
+# Step 1: Deploy mock cNGN token - copy ADMIN_OPS_ADDRESS + CNGN_TOKEN_ADDRESS to .env
+deploy-mocks-anvil:
+	forge script script/DeployMock.s.sol:DeployMock --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast -vvvv
+
+# Step 2: Deploy core protocol - copy all 7 contract addresses to .env
+deploy-core-anvil:
+	forge script script/Deploy.s.sol:Deploy --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast -vvvv
+
+# Step 3: Wire contracts + execute Timelock bootstrap
+configure-anvil:
+	forge script script/Configure.s.sol:Configure --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast -vvvv
+
+
+# ==============================================================================
 # LIVE DEPLOYMENTS (Broadcasts transactions to the network)
 # REQUIRES: PRIVATE_KEY, BASE_SEPOLIA_RPC, and BASESCAN_API_KEY in .env
 # ==============================================================================

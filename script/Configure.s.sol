@@ -13,70 +13,129 @@ import { LAWPMultiSigController } from "../src/core/LAWPMultiSigController.sol";
 /// @title LAWP Configuration Script
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Wires protocol trust boundaries, executes Ownable2Step transition, locks out deployer.
+/// @dev Contract-level state variables are used instead of local variables in run() to avoid
+///      the EVM 16-slot stack depth limit ("Stack too deep") during coverage analysis.
+///      Each internal helper function operates on a small, isolated subset of state.
 contract Configure is Script {
-    uint256 public constant FINAL_TIMELOCK_DELAY = 2 days;
+    // uint256 public constant FINAL_TIMELOCK_DELAY = 2 days;
+    uint256 public constant FINAL_TIMELOCK_DELAY = 2 minutes; // for testing two minutes
 
+    // STATE: Contract References
+    // Stored at contract level so helpers can access them without passing
+    // everything as function parameters (which would re-introduce stack pressure).
+    LAWPMultiSigController internal _multiSig;
+    TimelockController internal _timelock;
+    LAWPComplianceEngine internal _engine;
+    LAWPImpactToken internal _impactToken;
+    LAWPActorRegistry internal _registry;
+
+    LAWPYieldVault internal _yieldVault;
+    LAWPOperationalVault internal _operationalVault;
+
+    address internal _adminSafe;
+    address internal _deployer;
+
+    // ENTRY POINT
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        _deployer = vm.addr(deployerPrivateKey);
+        _adminSafe = vm.envAddress("ADMIN_SAFE_ADDRESS");
 
-        TimelockController timelock = TimelockController(payable(vm.envAddress("TIMELOCK_ADDRESS")));
-        LAWPComplianceEngine engine = LAWPComplianceEngine(vm.envAddress("ENGINE_ADDRESS"));
-        LAWPYieldVault yieldVault = LAWPYieldVault(vm.envAddress("YIELD_VAULT_ADDRESS"));
-        LAWPOperationalVault operationalVault =
-            LAWPOperationalVault(vm.envAddress("OP_VAULT_ADDRESS"));
-        LAWPImpactToken impactToken = LAWPImpactToken(vm.envAddress("TOKEN_ADDRESS"));
-        LAWPActorRegistry registry = LAWPActorRegistry(vm.envAddress("REGISTRY_ADDRESS"));
-        LAWPMultiSigController multiSig = LAWPMultiSigController(vm.envAddress("MULTISIG_ADDRESS"));
-        address adminSafe = vm.envAddress("ADMIN_SAFE_ADDRESS");
+        // Load contract addresses from env into state - keeps run() stack shallow.
+        _loadContracts();
 
         vm.startBroadcast(deployerPrivateKey);
+        _configure();
+        vm.stopBroadcast();
 
-        // 1. Configure Actor Registry
-        registry.setLA2Wallet(vm.envAddress("LA2_WALLET"));
-        registry.setMVI1Wallet(vm.envAddress("MVI1_WALLET"));
-        registry.setRiskPoolWallet(vm.envAddress("RISK_POOL_WALLET"));
-        registry.setDevWallet(vm.envAddress("DEV_WALLET"));
+        _postFlight();
+    }
 
-        // 2. Wire trust boundaries (dual-vault architecture)
-        engine.setMultiSigController(address(multiSig));
-        yieldVault.setComplianceEngine(address(engine));
-        operationalVault.setComplianceEngine(address(engine));
-        impactToken.setComplianceEngine(address(engine));
+    // STEP 0: Load Contracts
+    // Reads env vars and populates state references. Isolated here so run()
+    // only holds deployerPrivateKey + deployer on its stack frame.
+    function _loadContracts() internal {
+        _yieldVault = LAWPYieldVault(vm.envAddress("YIELD_VAULT_ADDRESS"));
+        _operationalVault = LAWPOperationalVault(vm.envAddress("OP_VAULT_ADDRESS"));
 
-        // 3. Initiate Ownable2Step transfers to Timelock
-        registry.transferOwnership(address(timelock));
-        yieldVault.transferOwnership(address(timelock));
-        operationalVault.transferOwnership(address(timelock));
-        impactToken.transferOwnership(address(timelock));
-        engine.transferOwnership(address(timelock));
-        multiSig.transferOwnership(address(timelock));
+        _impactToken = LAWPImpactToken(vm.envAddress("TOKEN_ADDRESS"));
+        _engine = LAWPComplianceEngine(vm.envAddress("ENGINE_ADDRESS"));
+        _registry = LAWPActorRegistry(vm.envAddress("REGISTRY_ADDRESS"));
+        _multiSig = LAWPMultiSigController(vm.envAddress("MULTISIG_ADDRESS"));
+        _timelock = TimelockController(payable(vm.envAddress("TIMELOCK_ADDRESS")));
+    }
 
-        // PRE-FLIGHT: Verify all pending owners are set correctly
-        require(registry.pendingOwner() == address(timelock), "PreFlight: Registry owner mismatch");
+    // STEP 1–6 Orchestrator (broadcast scope)
+    function _configure() internal {
+        _configureRegistry(); // 1. Set operational wallets
+        _wireTrustBoundaries(); // 2. Link engine <-> vaults <-> token <-> multiSig
+        _initiateOwnership(); // 3. transferOwnership -> timelock (pending)
+        _preFlight(); // 4. Assert all pendingOwner == timelock
+        _executeTimelockBatch(); // 5. Timelock accepts ownership + raises delay
+        _lockoutDeployer(); // 6. Grant Admin Safe roles, revoke deployer roles
+    }
+
+    // STEP 1: Configure Actor Registry
+    function _configureRegistry() internal {
+        _registry.setLA2Wallet(vm.envAddress("LA2_WALLET"));
+        _registry.setMVI1Wallet(vm.envAddress("MVI1_WALLET"));
+        _registry.setRiskPoolWallet(vm.envAddress("RISK_POOL_WALLET"));
+        _registry.setDevWallet(vm.envAddress("DEV_WALLET"));
+    }
+
+    // STEP 2: Wire Trust Boundaries (dual-vault architecture)
+    function _wireTrustBoundaries() internal {
+        _engine.setMultiSigController(address(_multiSig));
+        _yieldVault.setComplianceEngine(address(_engine));
+        _operationalVault.setComplianceEngine(address(_engine));
+        _impactToken.setComplianceEngine(address(_engine));
+    }
+
+    // STEP 3: Initiate Ownable2Step Transfers -> Timelock
+    function _initiateOwnership() internal {
+        _registry.transferOwnership(address(_timelock));
+        _yieldVault.transferOwnership(address(_timelock));
+        _operationalVault.transferOwnership(address(_timelock));
+        _impactToken.transferOwnership(address(_timelock));
+        _engine.transferOwnership(address(_timelock));
+        _multiSig.transferOwnership(address(_timelock));
+    }
+
+    // STEP 4: Pre-Flight Checks - verify pending owners before Timelock acts
+    function _preFlight() internal view {
         require(
-            yieldVault.pendingOwner() == address(timelock), "PreFlight: YieldVault owner mismatch"
+            _registry.pendingOwner() == address(_timelock), "PreFlight: Registry owner mismatch"
         );
         require(
-            operationalVault.pendingOwner() == address(timelock),
+            _yieldVault.pendingOwner() == address(_timelock), "PreFlight: YieldVault owner mismatch"
+        );
+        require(
+            _operationalVault.pendingOwner() == address(_timelock),
             "PreFlight: OpVault owner mismatch"
         );
-        require(impactToken.pendingOwner() == address(timelock), "PreFlight: Token owner mismatch");
-        require(engine.pendingOwner() == address(timelock), "PreFlight: Engine owner mismatch");
-        require(multiSig.pendingOwner() == address(timelock), "PreFlight: MultiSig owner mismatch");
+        require(
+            _impactToken.pendingOwner() == address(_timelock), "PreFlight: Token owner mismatch"
+        );
+        require(_engine.pendingOwner() == address(_timelock), "PreFlight: Engine owner mismatch");
+        require(
+            _multiSig.pendingOwner() == address(_timelock), "PreFlight: MultiSig owner mismatch"
+        );
+    }
 
-        // 4. Atomic Timelock batch execution (0-delay)
+    // STEP 5: Atomic Timelock Batch - acceptOwnership × 6 + updateDelay
+    function _executeTimelockBatch() internal {
         address[] memory targets = new address[](7);
-        targets[0] = address(registry);
-        targets[1] = address(yieldVault);
-        targets[2] = address(operationalVault);
-        targets[3] = address(impactToken);
-        targets[4] = address(engine);
-        targets[5] = address(multiSig);
-        targets[6] = address(timelock);
+        targets[0] = address(_registry);
+        targets[1] = address(_yieldVault);
+        targets[2] = address(_operationalVault);
+        targets[3] = address(_impactToken);
+        targets[4] = address(_engine);
+        targets[5] = address(_multiSig);
+        targets[6] = address(_timelock);
 
         uint256[] memory values = new uint256[](7);
         bytes[] memory payloads = new bytes[](7);
+
         bytes memory acceptOwnership = abi.encodeWithSignature("acceptOwnership()");
         payloads[0] = acceptOwnership;
         payloads[1] = acceptOwnership;
@@ -87,37 +146,44 @@ contract Configure is Script {
         payloads[6] = abi.encodeWithSignature("updateDelay(uint256)", FINAL_TIMELOCK_DELAY);
 
         bytes32 salt = keccak256("LAWP_PRODUCTION_SETUP");
-        timelock.scheduleBatch(targets, values, payloads, bytes32(0), salt, 0);
-        timelock.executeBatch(targets, values, payloads, bytes32(0), salt);
+        _timelock.scheduleBatch(targets, values, payloads, bytes32(0), salt, 0);
+        _timelock.executeBatch(targets, values, payloads, bytes32(0), salt);
+    }
 
-        // 5. Grant permanent roles to Admin Safe
+    // STEP 6: Grant Admin Safe roles, revoke deployer roles
+    function _lockoutDeployer() internal {
         bytes32 DEFAULT_ADMIN_ROLE = 0x00;
-        timelock.grantRole(timelock.PROPOSER_ROLE(), adminSafe);
-        timelock.grantRole(timelock.CANCELLER_ROLE(), adminSafe);
-        timelock.grantRole(timelock.EXECUTOR_ROLE(), address(0)); // Open execution
 
-        // 6. Revoke all deployer roles
-        timelock.renounceRole(timelock.PROPOSER_ROLE(), deployer);
-        timelock.renounceRole(timelock.CANCELLER_ROLE(), deployer);
-        timelock.renounceRole(timelock.EXECUTOR_ROLE(), deployer);
-        timelock.renounceRole(DEFAULT_ADMIN_ROLE, deployer);
+        // Grant permanent governance roles to the Admin Safe multisig
+        _timelock.grantRole(_timelock.PROPOSER_ROLE(), _adminSafe);
+        _timelock.grantRole(_timelock.CANCELLER_ROLE(), _adminSafe);
+        _timelock.grantRole(_timelock.EXECUTOR_ROLE(), address(0)); // Open execution
 
-        vm.stopBroadcast();
+        // Revoke ALL deployer roles - deployer becomes a zero-privilege EOA
+        _timelock.renounceRole(_timelock.PROPOSER_ROLE(), _deployer);
+        _timelock.renounceRole(_timelock.CANCELLER_ROLE(), _deployer);
+        _timelock.renounceRole(_timelock.EXECUTOR_ROLE(), _deployer);
+        _timelock.renounceRole(DEFAULT_ADMIN_ROLE, _deployer);
+    }
 
-        // POST-FLIGHT: Mathematical proof of successful handover
-        require(registry.owner() == address(timelock), "PostFlight: Registry handover failed");
-        require(yieldVault.owner() == address(timelock), "PostFlight: YieldVault handover failed");
+    // POST-FLIGHT: Mathematical proof of successful handover (view only)
+    // Runs AFTER vm.stopBroadcast() - no gas cost in production.
+    function _postFlight() internal view {
+        bytes32 DEFAULT_ADMIN_ROLE = 0x00;
+
+        require(_registry.owner() == address(_timelock), "PostFlight: Registry handover failed");
+        require(_yieldVault.owner() == address(_timelock), "PostFlight: YieldVault handover failed");
         require(
-            operationalVault.owner() == address(timelock), "PostFlight: OpVault handover failed"
+            _operationalVault.owner() == address(_timelock), "PostFlight: OpVault handover failed"
         );
-        require(impactToken.owner() == address(timelock), "PostFlight: Token handover failed");
-        require(engine.owner() == address(timelock), "PostFlight: Engine handover failed");
-        require(multiSig.owner() == address(timelock), "PostFlight: MultiSig handover failed");
-        require(timelock.getMinDelay() == FINAL_TIMELOCK_DELAY, "PostFlight: Delay update failed");
-        require(!timelock.hasRole(DEFAULT_ADMIN_ROLE, deployer), "PostFlight: Deployer God Mode!");
+        require(_impactToken.owner() == address(_timelock), "PostFlight: Token handover failed");
+        require(_engine.owner() == address(_timelock), "PostFlight: Engine handover failed");
+        require(_multiSig.owner() == address(_timelock), "PostFlight: MultiSig handover failed");
+        require(_timelock.getMinDelay() == FINAL_TIMELOCK_DELAY, "PostFlight: Delay update failed");
+        require(!_timelock.hasRole(DEFAULT_ADMIN_ROLE, _deployer), "PostFlight: Deployer God Mode!");
         require(
-            !timelock.hasRole(timelock.CANCELLER_ROLE(), deployer),
-            "PostFlight: Deployer Canceller!"
+            !_timelock.hasRole(_timelock.CANCELLER_ROLE(), _deployer),
+            "PostFlight: Deployer Canceller"
         );
 
         console2.log("Configuration complete. Ownable2Step accepted by Timelock.");
