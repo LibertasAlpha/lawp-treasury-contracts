@@ -10,3 +10,4 @@ out/
 # Dotenv file
 .env
 note.md
+contract.dev.js

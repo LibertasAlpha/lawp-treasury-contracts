@@ -29,11 +29,13 @@ depth = 100
 fail_on_revert = true
 
 [rpc_endpoints]
-base = "${BASE_MAINNET_RPC}"
+anvil        = "http://127.0.0.1:8545"
+stagenet     = "${STAGENET_RPC_URL}"
+base         = "${BASE_MAINNET_RPC}"
 base_sepolia = "${BASE_SEPOLIA_RPC}"
 
 [etherscan]
-base = { key = "${BASESCAN_API_KEY}" }
+base         = { key = "${BASESCAN_API_KEY}" }
 base_sepolia = { key = "${BASESCAN_API_KEY}" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
