@@ -121,9 +121,10 @@ init-stagenet:
 generate-wallet:
 	npx contract.dev generate-wallet
 
-# Build + upload compiled contract artifacts to the Stagenet
+# Clean + Build + upload compiled contract artifacts to the Stagenet
 # This creates inactive Workspaces that activate on deployment
 push-contracts:
+	forge clean
 	forge build
 	npx contract.dev push-contracts
 
