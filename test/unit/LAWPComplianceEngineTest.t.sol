@@ -201,7 +201,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
         // Fee split
         assertEq(cngn.balanceOf(address(operationalVault)), opBefore + expectedRiskFee);
-        assertEq(cngn.balanceOf(address(yieldVault)), yieldBefore + gross);
+        assertEq(cngn.balanceOf(address(yieldVault)), yieldBefore + expectedNet);
 
         // Pool registered
         (bool exists,) = engine.pools(1);

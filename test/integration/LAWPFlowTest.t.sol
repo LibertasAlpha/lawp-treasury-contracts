@@ -42,7 +42,7 @@ contract LAWPFlowTest is LAWPTestBase {
         engine.processPoolDeposit(1, grossDeposit, users, bps);
 
         // Verify vault balances
-        assertEq(cngn.balanceOf(address(yieldVault)), grossDeposit); // gross in yieldVault
+        assertEq(cngn.balanceOf(address(yieldVault)), grossDeposit - riskFee); // net in yieldVault
         assertEq(cngn.balanceOf(address(operationalVault)), riskFee);
         // Engine and MockMultiSig hold zero
         assertEq(cngn.balanceOf(address(engine)), 0);

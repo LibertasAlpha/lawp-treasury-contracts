@@ -17,8 +17,8 @@ import { LAWPMultiSigController } from "../src/core/LAWPMultiSigController.sol";
 ///      the EVM 16-slot stack depth limit ("Stack too deep") during coverage analysis.
 ///      Each internal helper function operates on a small, isolated subset of state.
 contract Configure is Script {
-    // uint256 public constant FINAL_TIMELOCK_DELAY = 2 days;
-    uint256 public constant FINAL_TIMELOCK_DELAY = 2 minutes; // for testing two minutes
+    uint256 public constant FINAL_TIMELOCK_DELAY = 2 days;
+    // uint256 public constant FINAL_TIMELOCK_DELAY = 2 minutes; // for testing two minutes
 
     // STATE: Contract References
     // Stored at contract level so helpers can access them without passing

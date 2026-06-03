@@ -277,7 +277,7 @@ contract DeploymentScriptsTest is Test {
             timelockAddr,
             abi.encodeWithSignature("hasRole(bytes32,address)", tl.CANCELLER_ROLE(), deployer),
             abi.encode(true),
-            "PostFlight: Deployer Canceller!",
+            "PostFlight: Deployer Canceller",
             false
         );
     }

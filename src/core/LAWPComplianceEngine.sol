@@ -246,7 +246,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             cngnToken.safeTransferFrom(msg.sender, address(operationalVault), riskFee);
         }
 
-        cngnToken.safeTransferFrom(msg.sender, address(yieldVault), _grossAmount);
+        cngnToken.safeTransferFrom(msg.sender, address(yieldVault), netCapital);
         emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
 
         // 4. Mint fractional shares to contributors based on net capital.
