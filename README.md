@@ -138,7 +138,7 @@ Reverts when:
 - **OpenZeppelin Contracts v5.0.2**
   - **Purpose:** Provides highly audited foundational logic: `Ownable2Step`, `Pausable`, `ReentrancyGuard`, `ERC20`, `SafeERC20`, and `EIP712`.
 - **cNGN Token (ERC20)**
-  - **Usage:** The immutable fiat-backed stablecoin for all capital formation, risk fees, and yield distribution. Fixed at deployment — cannot be changed.
+  - **Usage:** The immutable fiat-backed stablecoin for all capital formation, risk fees, and yield distribution. Fixed at deployment - cannot be changed.
 
 ## Configuration
 
@@ -217,7 +217,7 @@ make coverage
 
 ### Deployment (Simulations & Live)
 
-We utilize an Atomic Bootstrap Pattern to deploy and immediately wire all trust boundaries. `Configure.s.sol` completes the FULL Ownable2Step handover atomically — the deployer initiates with `transferOwnership()` and the Admin Safe accepts with `acceptOwnership()` within the same script execution. No separate manual step is required.
+We utilize an Atomic Bootstrap Pattern to deploy and immediately wire all trust boundaries. `Configure.s.sol` completes the FULL Ownable2Step handover atomically - the deployer initiates with `transferOwnership()` and the Admin Safe accepts with `acceptOwnership()` within the same script execution. No separate manual step is required.
 
 **Dry-Run / Simulate Deployments:**
 
