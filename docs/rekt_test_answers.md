@@ -4,7 +4,7 @@ This document aligns the Libertas Alpha Water Project (LAWP) smart contract arch
 
 ## 1. Do you have all actors, roles, and privileges documented?
 
-Yes. The privileges and trust boundaries are explicitly defined in the Threat Model (`docs/threat_model.md`). This includes the Trustless Compliance Engine, the Subordinate Treasury Vault, the Operational Board (Multi-Sig verification), and the Admin Board (Admin Safe). Our deployment configuration strictly verifies that the deployer EOA initiates an `Ownable2Step` handover to the Admin Safe — locking out the deployer once the Admin Safe calls `acceptOwnership()` on each of the six protocol contracts.
+Yes. The privileges and trust boundaries are explicitly defined in the Threat Model (`docs/threat_model.md`). This includes the Trustless Compliance Engine, the Subordinate Treasury Vault, the Operational Board (Multi-Sig verification), and the Admin Board (Admin Safe). Our deployment configuration strictly verifies that the deployer EOA initiates an `Ownable2Step` handover to the Admin Safe - locking out the deployer once the Admin Safe calls `acceptOwnership()` on each of the six protocol contracts.
 
 ## 2. Do you keep documentation of all the external services, contracts, and oracles you rely on?
 
@@ -12,7 +12,7 @@ Yes. LAWP minimizes external dependencies to reduce attack surfaces. On-chain, w
 
 ## 3. Do you have a written and tested incident response plan?
 
-Yes. At the smart contract level, we implemented the Emergency Guardian Pattern. The 3-of-5 Operational Multi-Sig can trigger `emergencyPause()` instantly to halt capital formation and routing if an exploit is detected. Crucially, they cannot unpause or extract funds. Unpausing is strictly reserved for the Admin Safe owner (`onlyOwner`), maintaining a clean separation between emergency response and administrative power.
+Yes. Both `emergencyPause()` and `unpause()` are controlled exclusively by the **Admin Safe**, a multisig wallet (e.g., 3-of-5 Gnosis Safe). This requires multiple independent signatures to freeze or resume the system, eliminating any single point of failure while remaining far faster than an on‑chain governance vote. The pause/unpause flow is documented in an internal runbook and tested regularly on testnet.
 
 ## 4. Do you document the best ways to attack your system?
 

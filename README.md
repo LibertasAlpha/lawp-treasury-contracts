@@ -154,7 +154,7 @@ Reverts when:
 ### Requirements
 
 - Foundry (Forge, Cast, Anvil, Chisel)
-- Solidity ^0.8.24
+- Solidity 0.8.30
 - Make
 
 ### Installation
@@ -235,7 +235,7 @@ make configure-protocol-testnet
 
 ## Notes & Variants
 
-- For Emergency Pausing, use `engine.emergencyPause()` (Callable by the Multi-Sig).
+- For Emergency Pausing, use `engine.emergencyPause()` (Callable by the Admin/Owner).
 - For Unpausing, use `engine.unpause()` (Callable only by the Admin/Owner).
 
 ## Roadmap
