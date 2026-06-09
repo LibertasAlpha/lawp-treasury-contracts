@@ -4,15 +4,15 @@ This document aligns the Libertas Alpha Water Project (LAWP) smart contract arch
 
 ## 1. Do you have all actors, roles, and privileges documented?
 
-Yes. The privileges and trust boundaries are explicitly defined in the Threat Model (`docs/threat_model.md`). This includes the Trustless Compliance Engine, the Subordinate Treasury Vault, the Operational Board (Multi-Sig verification), and the Admin Board (Timelock Governance). Our deployment configuration strictly verifies that the deployer EOA is locked out (stripped of all privileges) via post-flight mathematical assertions.
+Yes. The privileges and trust boundaries are explicitly defined in the Threat Model (`docs/threat_model.md`). This includes the Trustless Compliance Engine, the Subordinate Treasury Vault, the Operational Board (Multi-Sig verification), and the Admin Board (Admin Safe). Our deployment configuration strictly verifies that the deployer EOA initiates an `Ownable2Step` handover to the Admin Safe — locking out the deployer once the Admin Safe calls `acceptOwnership()` on each of the six protocol contracts.
 
 ## 2. Do you keep documentation of all the external services, contracts, and oracles you rely on?
 
-Yes. LAWP minimizes external dependencies to reduce attack surfaces. On-chain, we rely exclusively on heavily audited OpenZeppelin standard contracts (`TimelockController`, `ERC20`, `Ownable2Step`, `EIP712`). Off-chain, the system relies on the Planbok fiat bridge, which is documented and bridged via cryptographically verified EIP-712 signatures.
+Yes. LAWP minimizes external dependencies to reduce attack surfaces. On-chain, we rely exclusively on heavily audited OpenZeppelin standard contracts (`Ownable2Step`, `ERC20`, `SafeERC20`, `EIP712`, `Pausable`, `ReentrancyGuard`). Off-chain, the system relies on the Planbok fiat bridge, which is documented and bridged via cryptographically verified EIP-712 signatures.
 
 ## 3. Do you have a written and tested incident response plan?
 
-Yes. At the smart contract level, we implemented the Emergency Guardian Pattern. The 3-of-5 Operational Multi-Sig can trigger `emergencyPause()` instantly to halt capital formation and routing if an exploit is detected. Crucially, they cannot unpause or extract funds. Unpausing is strictly reserved for the Timelock, enforcing a 48-hour transparent governance window to resolve the incident safely.
+Yes. At the smart contract level, we implemented the Emergency Guardian Pattern. The 3-of-5 Operational Multi-Sig can trigger `emergencyPause()` instantly to halt capital formation and routing if an exploit is detected. Crucially, they cannot unpause or extract funds. Unpausing is strictly reserved for the Admin Safe owner (`onlyOwner`), maintaining a clean separation between emergency response and administrative power.
 
 ## 4. Do you document the best ways to attack your system?
 

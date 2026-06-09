@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { LAWPTestBase } from "../base/LAWPTestBase.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
-import { console2 } from "forge-std/Script.sol";
 
 /// @title LAWPFlowTest
 /// @notice End-to-end integration test covering the full LAWP Protocol lifecycle.

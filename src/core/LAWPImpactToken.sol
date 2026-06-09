@@ -47,8 +47,12 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyComplianceEngine() {
-        if (msg.sender != complianceEngine) revert LAWPImpactToken_UnauthorizedCaller();
+        _onlyComplianceEngine();
         _;
+    }
+
+    function _onlyComplianceEngine() internal view {
+        if (msg.sender != complianceEngine) revert LAWPImpactToken_UnauthorizedCaller();
     }
 
     constructor(address _initialAdmin, string memory _uri)
@@ -72,7 +76,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
                         CONFIGURATION LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Links the Compliance Engine. Callable only by Admin/Timelock.
+    /// @notice Links the Compliance Engine. Callable only by the Admin/Owner.
     /// @param _engine The address of the LAWPComplianceEngine contract.
     function setComplianceEngine(address _engine) external onlyOwner {
         if (_engine == address(0)) revert LAWPImpactToken_ZeroAddress();

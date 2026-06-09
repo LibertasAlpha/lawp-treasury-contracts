@@ -38,4 +38,16 @@ base_sepolia = "${BASE_SEPOLIA_RPC}"
 base         = { key = "${BASESCAN_API_KEY}" }
 base_sepolia = { key = "${BASESCAN_API_KEY}" }
 
+
+# Suppress lint warnings that conflict with the project's financial nomenclature
+# (e.g., BPS, cNGN) and test-only patterns (cheatcodes, inline keccak256).
+[lint]
+ignore = [
+    "screaming-snake-case-immutable",
+    "mixed-case-variable",
+    "mixed-case-function",
+    "unsafe-cheatcode",
+    "asm-keccak256",
+]
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

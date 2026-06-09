@@ -26,11 +26,11 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The ERC20 token custodied by this vault (cNGN).
-    IERC20 public immutable cngnToken;
-
     /// @notice The explicitly authorized orchestrator contract (LAWPComplianceEngine).
     address public complianceEngine;
+
+    /// @notice The immutable ERC20 settlement token (cNGN) for all deposits, fees, and yield distributions.
+    IERC20 public immutable cNGNToken;
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -38,21 +38,25 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
 
     /// @notice Restricts execution strictly to the Compliance Engine to prevent unauthorized extraction.
     modifier onlyComplianceEngine() {
-        if (msg.sender != complianceEngine) revert LAWPOperationalVault_UnauthorizedCaller();
+        _onlyComplianceEngine();
         _;
+    }
+
+    function _onlyComplianceEngine() internal view {
+        if (msg.sender != complianceEngine) revert LAWPOperationalVault_UnauthorizedCaller();
     }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the vault with the asset token and sets the initial admin.
-    /// @param _cngnToken Address of the stablecoin (cNGN).
-    /// @param _initialAdmin Address of the deployer or Timelock controller.
-    constructor(address _cngnToken, address _initialAdmin) Ownable(_initialAdmin) {
-        if (_cngnToken == address(0)) revert LAWPOperationalVault_InvalidAddress();
+    /// @notice Initializes the vault and sets the initial admin.
+    /// @param _cNGNToken Address of the stablecoin (cNGN).
+    /// @param _initialAdmin Address of the deployer or Admin Safe.
+    constructor(address _cNGNToken, address _initialAdmin) Ownable(_initialAdmin) {
+        if (_cNGNToken == address(0)) revert LAWPOperationalVault_InvalidAddress();
 
-        cngnToken = IERC20(_cngnToken);
+        cNGNToken = IERC20(_cNGNToken);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -66,7 +70,7 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
     }
 
     /// @notice Links the Compliance Engine to the Vault.
-    /// @dev Callable only by the Admin/Timelock. Crucial for establishing the physical trust boundary.
+    /// @dev Callable only by the Admin/Owner. Crucial for establishing the physical trust boundary.
     /// @param _engine The address of the new LAWPComplianceEngine contract.
     function setComplianceEngine(address _engine) external override onlyOwner {
         if (_engine == address(0)) revert LAWPOperationalVault_InvalidAddress();
@@ -93,7 +97,7 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
         if (_amount == 0) revert LAWPOperationalVault_InvalidAmount();
 
         // SafeERC20 physically moves the tokens and reverts if the underlying transfer fails
-        cngnToken.safeTransfer(_to, _amount);
+        cNGNToken.safeTransfer(_to, _amount);
 
         emit OperationalTransferExecuted(_to, _amount);
     }

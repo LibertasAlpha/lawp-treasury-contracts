@@ -194,13 +194,11 @@ contract LAWPHandler is Test {
     ///      engine.processPoolDeposit(poolId, grossAmount, contributors, bps)
     ///        - Validates BPS array sums to 10_000
     ///        - Computes riskFee = grossAmount * 10% -> operationalVault
-    ///        - Transfers grossAmount -> yieldVault (FULL gross, not net)
+    ///        - Transfers netCapital (grossAmount - riskFee) -> yieldVault
     ///        - Mints one ERC-721 token per contributor
     ///
-    ///      NOTE: The full grossAmount goes to yieldVault. The riskFee is
-    ///      ALSO transferred to opVault. This means
-    ///      yieldVault receives gross AND opVault receives riskFee.
-    ///      So total cNGN pulled from the relayer = grossAmount + riskFee.
+    ///      NOTE: The riskFee goes to opVault and netCapital goes to yieldVault.
+    ///      Total cNGN pulled from the relayer = grossAmount (riskFee + netCapital).
     ///
     /// @dev GHOST UPDATES:
     ///      Records gross, net, and vault inflows for Conservation Invariant M.
@@ -246,8 +244,8 @@ contract LAWPHandler is Test {
         ghost_poolGrossDeposits[poolId] = amount;
         ghost_poolNetDeposits[poolId] = netCapital;
 
-        // yieldVault receives the FULL gross; opVault receives only the risk fee.
-        ghost_yieldVaultInflow += amount;
+        // yieldVault receives the net capital; opVault receives only the risk fee.
+        ghost_yieldVaultInflow += netCapital;
         ghost_opVaultInflow += riskFee;
 
         // 6. Snapshot minted token data for Invariant L (Immutability)

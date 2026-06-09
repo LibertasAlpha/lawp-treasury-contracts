@@ -51,3 +51,5 @@ These invariants are explicitly asserted in `test/invariant/LAWPInvariants.t.sol
 **Invariant G (Monotonic Yield Tracking):** The Compliance Engine's internal cumulative ledgers (`poolYieldTracker`, `poolRocTracker`) must never drift or skew from the external parallel-truth simulation.
 
 **Invariant H (No Negative Yield):** The protocol can NEVER distribute more yield than what was globally routed to it by the Multi-Sig Operational Board.
+
+**Invariant I (Single-Asset Settlement):** The settlement token (`cNGNToken`) is permanently fixed at deployment via Solidity's `immutable` keyword. No on-chain mechanism exists to alter it. All vault balances, cumulative yield/RoC trackers, and operational ledgers are denominated in this single asset. This structurally prevents asset-accounting drift between recorded state and physical vault holdings.

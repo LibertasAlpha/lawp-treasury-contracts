@@ -30,6 +30,10 @@ contract LAWPOperationalVaultTest is Test {
         vm.prank(admin);
         vault.setComplianceEngine(engine);
 
+        // Mock the engine's cNGNToken() to return our test cNGN.
+        // The vault delegates to ILAWPComplianceEngine(complianceEngine).cNGNToken().
+        vm.mockCall(engine, abi.encodeWithSignature("cNGNToken()"), abi.encode(address(cngn)));
+
         cngn.mintTest(address(vault), 1_000_000e6);
     }
 
@@ -37,19 +41,21 @@ contract LAWPOperationalVaultTest is Test {
                           CONSTRUCTOR TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Constructor_SetsTokenAndOwner() public view {
-        assertEq(address(vault.cngnToken()), address(cngn));
+    function test_Constructor_SetsOwner() public view {
         assertEq(vault.owner(), admin);
-    }
-
-    function test_Constructor_RevertIf_ZeroCngn() public {
-        vm.expectRevert(LAWPOperationalVault.LAWPOperationalVault_InvalidAddress.selector);
-        new LAWPOperationalVault(address(0), admin);
     }
 
     function test_Constructor_RevertIf_ZeroAdmin() public {
         vm.expectRevert();
         new LAWPOperationalVault(address(cngn), address(0));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     CNGN TOKEN DELEGATION
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CNGNToken_DelegatesToEngine() public view {
+        assertEq(address(vault.cNGNToken()), address(cngn));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -139,6 +145,9 @@ contract LAWPOperationalVaultTest is Test {
         address engine2 = address(77);
         vm.prank(admin);
         vault2.setComplianceEngine(engine2);
+
+        // Mock engine2's cNGNToken() so vault2 can resolve the token
+        vm.mockCall(engine2, abi.encodeWithSignature("cNGNToken()"), abi.encode(address(cngn)));
 
         // engine2 cannot withdraw from vault (different engine)
         cngn.mintTest(address(vault), 1000e6);

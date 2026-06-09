@@ -2,12 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { LAWPStructs } from "../libraries/LAWPStructs.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title ILAWPComplianceEngine
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice The Zero-Custody Switchboard and Deterministic Accounting Layer.
 /// @dev Calculates splits, orchestrates single-hop transfers from external sources
-/// to isolated Vaults, and maintains O(1) ledgers for pull-based claiming.
+///      to isolated Vaults, and maintains O(1) ledgers for pull-based claiming.
 interface ILAWPComplianceEngine {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -57,7 +58,7 @@ interface ILAWPComplianceEngine {
     /// @dev Pulls `_grossAmount` from msg.sender. Drops Risk Fee into Operational Vault.
     ///      Drops `netCapital` into Yield Vault. Mints fractional ERC-721 equity.
     /// @param _poolId The unique deployment pool identifier.
-    /// @param _grossAmount Total cNGN deposited before risk fee deduction.
+    /// @param _grossAmount Total payment token deposited before risk fee deduction.
     /// @param _contributors Array of investor wallet addresses.
     /// @param _bpsShares Array of basis points representing fractional equity (must sum to 10000).
     function processPoolDeposit(
@@ -107,7 +108,7 @@ interface ILAWPComplianceEngine {
                                VIEW HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Calculates the exact pending cNGN yield for a specific token.
+    /// @notice Calculates the exact pending yield for a specific token.
     /// @param _tokenId The ERC-721 Impact Token ID.
     function calculateProportionalYield(uint256 _tokenId) external view returns (uint256);
 

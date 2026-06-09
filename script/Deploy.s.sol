@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Script, console2 } from "forge-std/Script.sol";
-import { TimelockController } from "@openzeppelin/contracts/governance/TimelockController.sol";
+
 import { LAWPComplianceEngine } from "../src/core/LAWPComplianceEngine.sol";
 import { LAWPYieldVault } from "../src/core/LAWPYieldVault.sol";
 import { LAWPOperationalVault } from "../src/core/LAWPOperationalVault.sol";
@@ -10,78 +10,98 @@ import { LAWPImpactToken } from "../src/core/LAWPImpactToken.sol";
 import { LAWPActorRegistry } from "../src/core/LAWPActorRegistry.sol";
 import { LAWPMultiSigController } from "../src/core/LAWPMultiSigController.sol";
 
-/// @title LAWP Deployment Script
-/// @author Obinna Franklin Duru (BinnaDev)
-/// @notice Deploys bare bytecodes to the network. Configuration handled by Configure.s.sol.
-/// @dev Dual-vault architecture: LAWPYieldVault holds investor capital, LAWPOperationalVault
-///      holds risk fees and operational splits.
-contract Deploy is Script {
-    uint256 public constant INITIAL_TIMELOCK_DELAY = 0;
+/// @title LAWP System Deployment Script
+/// @notice Deploys immutable system bytecode and foundational contracts
+/// @dev This script ONLY deploys. No wiring, no ownership finalization.
+contract DeployLAWPSystem is Script {
+    /*//////////////////////////////////////////////////////////////
+                            CONFIGURATION
+    //////////////////////////////////////////////////////////////*/
+
     uint256 public constant INITIAL_RISK_FEE_BPS = 1000; // 10%
-    uint256 public constant BOARD_SIZE = 5;
     uint256 public constant MULTISIG_THRESHOLD = 3;
+    uint256 public constant MULTISIG_BOARD_SIZE = 5;
+
+    /*//////////////////////////////////////////////////////////////
+                        DEPLOYMENT ENTRYPOINT
+    //////////////////////////////////////////////////////////////*/
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
-        address cngnToken = vm.envAddress("CNGN_TOKEN_ADDRESS");
-        string memory baseURI = vm.envString("BASE_URI");
+        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        address deployerAddress = vm.addr(deployerPrivateKey);
 
-        console2.log("Starting LAWP Deployment from:", deployer);
+        address cNGNTokenAddress = vm.envAddress("CNGN_TOKEN_ADDRESS");
+        string memory tokenMetadataBaseURI = vm.envString("BASE_URI");
+
+        console2.log("=== LAWP SYSTEM DEPLOYMENT STARTED ===");
+        console2.log("Deployer:", deployerAddress);
+
         vm.startBroadcast(deployerPrivateKey);
 
-        // // 1. Timelock (0-delay for atomic setup)
-        // address[] memory proposers = new address[](1);
-        // proposers[0] = deployer;
-        // address[] memory executors = new address[](1);
-        // executors[0] = deployer;
-        // TimelockController timelock =
-        //     new TimelockController(INITIAL_TIMELOCK_DELAY, proposers, executors, deployer);
-        // console2.log("TimelockController:", address(timelock));
+        /*//////////////////////////////////////////////////////////////
+                            CORE INFRASTRUCTURE
+        //////////////////////////////////////////////////////////////*/
 
-        // // 2. Core dependencies (temporarily owned by deployer)
-        // LAWPActorRegistry registry = new LAWPActorRegistry(deployer);
-        // console2.log("LAWPActorRegistry:", address(registry));
+        LAWPActorRegistry actorRegistry = new LAWPActorRegistry(deployerAddress);
 
-        // 3. Dual vaults - only these two contracts ever hold protocol cNGN
-        LAWPYieldVault yieldVault = new LAWPYieldVault(cngnToken, deployer);
-        console2.log("LAWPYieldVault:", address(yieldVault));
+        console2.log("ActorRegistry deployed at:", address(actorRegistry));
 
-        LAWPOperationalVault operationalVault = new LAWPOperationalVault(cngnToken, deployer);
-        console2.log("LAWPOperationalVault:", address(operationalVault));
+        /*//////////////////////////////////////////////////////////////
+                                VAULTS
+        //////////////////////////////////////////////////////////////*/
 
-        // LAWPImpactToken impactToken = new LAWPImpactToken(deployer, baseURI);
-        // console2.log("LAWPImpactToken:", address(impactToken));
+        LAWPYieldVault investorVault = new LAWPYieldVault(cNGNTokenAddress, deployerAddress);
 
-        address impactToken = address(LAWPImpactToken(0x9b6ead83f73963a943073d47a8768578dc885596));
-        address registry = address(LAWPActorRegistry(0x62b58e143caf914db57532ff05b5dba47b9fa233));
+        LAWPOperationalVault operationalVault =
+            new LAWPOperationalVault(cNGNTokenAddress, deployerAddress);
 
-        // 4. Compliance Engine
-        LAWPComplianceEngine engine = new LAWPComplianceEngine(
-            deployer,
-            address(yieldVault),
+        console2.log("YieldVault deployed at:", address(investorVault));
+        console2.log("OperationalVault deployed at:", address(operationalVault));
+
+        /*//////////////////////////////////////////////////////////////
+                                TOKEN
+        //////////////////////////////////////////////////////////////*/
+
+        LAWPImpactToken impactToken = new LAWPImpactToken(deployerAddress, tokenMetadataBaseURI);
+
+        console2.log("ImpactToken deployed at:", address(impactToken));
+
+        /*//////////////////////////////////////////////////////////////
+                            COMPLIANCE ENGINE
+        //////////////////////////////////////////////////////////////*/
+
+        LAWPComplianceEngine complianceEngine = new LAWPComplianceEngine(
+            deployerAddress,
+            address(investorVault),
             address(operationalVault),
             address(impactToken),
-            address(registry),
-            cngnToken,
+            address(actorRegistry),
+            cNGNTokenAddress,
             INITIAL_RISK_FEE_BPS
         );
-        console2.log("LAWPComplianceEngine:", address(engine));
 
-        // // 5. Multi-Sig Controller
-        // address[] memory initialBoard = new address[](BOARD_SIZE);
-        // initialBoard[0] = vm.envAddress("BOARD_SIGNER_1");
-        // initialBoard[1] = vm.envAddress("BOARD_SIGNER_2");
-        // initialBoard[2] = vm.envAddress("BOARD_SIGNER_3");
-        // initialBoard[3] = vm.envAddress("BOARD_SIGNER_4");
-        // initialBoard[4] = vm.envAddress("BOARD_SIGNER_5");
+        console2.log("ComplianceEngine deployed at:", address(complianceEngine));
 
-        // LAWPMultiSigController multiSig = new LAWPMultiSigController(
-        //     deployer, address(engine), initialBoard, MULTISIG_THRESHOLD
-        // );
-        // console2.log("LAWPMultiSigController:", address(multiSig));
+        /*//////////////////////////////////////////////////////////////
+                            MULTISIG CONTROLLER
+        //////////////////////////////////////////////////////////////*/
+
+        address[] memory boardMembers = new address[](MULTISIG_BOARD_SIZE);
+
+        boardMembers[0] = vm.envAddress("BOARD_SIGNER_1");
+        boardMembers[1] = vm.envAddress("BOARD_SIGNER_2");
+        boardMembers[2] = vm.envAddress("BOARD_SIGNER_3");
+        boardMembers[3] = vm.envAddress("BOARD_SIGNER_4");
+        boardMembers[4] = vm.envAddress("BOARD_SIGNER_5");
+
+        LAWPMultiSigController multiSigController = new LAWPMultiSigController(
+            deployerAddress, address(complianceEngine), boardMembers, MULTISIG_THRESHOLD
+        );
+
+        console2.log("MultiSigController deployed at:", address(multiSigController));
 
         vm.stopBroadcast();
-        console2.log("Deployment complete. Run Configure.s.sol next.");
+
+        console2.log("=== DEPLOYMENT COMPLETE (NO CONFIGURATION APPLIED) ===");
     }
 }

@@ -14,7 +14,7 @@ We separate authority into distinct, isolated layers to ensure no single entity 
 - **The Compliance Engine (The Brain):** Calculates the math, distributes equity, and routes yield strictly according to the legal non-profit LTD/GTE splits. It is an unchangeable robot.
 - **The Governance Boards (The Hands):** Humans who interact with the system. They are strictly divided into:
   - **Operational Board (Multi-Sig):** 5 trusted members who verify fiat deposits. They only have the power to tell the Engine that money has arrived, and act as an Emergency Guardian capable of instantly freezing the system if an exploit is detected.
-  - **Admin Board (Safe + Timelock):** High-level guardians who can update systemic parameters (like changing a broken operational wallet) and unfreeze the protocol. They are bound by a 48-Hour Public Delay, giving the community time to veto or exit if they disagree with a decision.
+  - **Admin Board (Safe):** High-level guardians who can update systemic parameters (like changing a broken operational wallet) and unfreeze the protocol. They hold the Admin Safe key and are the final owners of all protocol contracts via Ownable2Step.
 
 ## 2. Technical Architecture & Trust Boundaries
 
@@ -23,27 +23,27 @@ The system is designed with explicit trust boundaries. We enforce the principle 
 - **The Compliance Engine is Trustless:** It relies entirely on immutable O(1) fractional math. It does not trust the Treasury, the Token, or the users.
 - **The Treasury is Subordinate:** It trusts only the Compliance Engine. If the Admin Safe or the Deployer directly commands the Treasury to move funds, the transaction will revert.
 - **The Multi-Sig Controller is Narrow:** It trusts off-chain EOAs (Externally Owned Accounts) to sign EIP-712 payloads. It is strictly limited to verifying ECDSA cryptography and preventing replay attacks. It has zero authority to alter economic splits.
-- **The Timelock is the Ultimate Owner:** The Timelock strictly separates powers:
-  - **Proposer & Canceller:** Granted to the 3-of-5 Admin Safe.
-  - **Executor:** Granted to `address(0)` (Open Execution to prevent governance censorship).
-  - **Admin:** The `DEFAULT_ADMIN_ROLE` (`0x00`) is permanently renounced by the deployer, locking out all backdoors.
+- **The Admin Safe is the Ultimate Owner:** All six protocol contracts (Registry, YieldVault, OperationalVault, ImpactToken, Engine, MultiSig) are owned by the Admin Safe via `Ownable2Step`. The Admin Safe holds the exclusive authority to:
+   - Update systemic parameters (risk fee, registry wallets).
+  - Wire or re-wire trust boundaries (engine ↔ vaults).
+  - Unpause the system after an emergency pause.
 
 ## 3. Threat Vectors & Structural Mitigations
 
 ### A. Centralization & Admin Abuse (Rug Pull)
 
-- **Threat:** A compromised founder key, or a rogue Admin Safe, attempts to drain the Treasury or alter the Systemic Risk Fee to 100%.
-- **Mitigation:** Protocol ownership is locked behind an OpenZeppelin `TimelockController` with a mandatory 2 days delay. The execution role is open (`address(0)`), meaning if a valid proposal passes the 48-hour buffer, anyone can execute it, preventing the admin from censoring their own queued upgrades. If a malicious upgrade is queued, the community has 48 hours of on-chain warning to withdraw or react.
+- **Threat:** A compromised Admin Safe key attempts to drain the Treasury or alter the Systemic Risk Fee to 100%.
+- **Mitigation:** Protocol contracts can only perform admin operations through the Admin Safe via the `onlyOwner` modifier. The Treasury Vaults are subordinate - they only respond to the Compliance Engine (`onlyComplianceEngine`). Even if the Admin Safe is compromised, it cannot directly extract funds from the vaults. It can only alter parameters (fee, registry wallets), giving token holders and the community time to observe suspicious on-chain transactions.
 
 ### B. Deployment & Setup Hijacking (The Deployment Trap)
 
-- **Threat:** During contract deployment, the Timelock is initially configured with a 0-day delay, or the deployer accidentally retains hidden privileges (e.g., `CANCELLER_ROLE` or `DEFAULT_ADMIN_ROLE`), allowing them to bypass governance entirely post-launch.
-- **Mitigation:** The protocol utilizes an Atomic Bootstrap Pattern. In a single transaction block, the deployment script executes an atomic batch that: 1) Accepts `Ownable2Step` ownership of all contracts, 2) Escalates the Timelock delay instantly to 48 hours, and 3) Explicitly renounces all Deployer roles (`PROPOSER`, `CANCELLER`, `EXECUTOR`, and `DEFAULT_ADMIN_ROLE`). Pre-flight and post-flight assertions guarantee the deployer is fully locked out before the transaction completes.
+- **Threat:** During contract deployment, the deployer retains hidden ownership privileges, allowing them to bypass the Admin Safe post-launch.
+- **Mitigation:** The protocol utilizes the `Ownable2Step` pattern. During `Configure.s.sol`, the deployer calls `transferOwnership(adminSafe)` on all six contracts, setting the Admin Safe as `pendingOwner`. The deployer's ownership is completely stripped during configuration — `Configure.s.sol` initiates `transferOwnership(adminSafe)` and then completes the handover by calling `acceptOwnership()` on behalf of the Admin Safe. Pre-flight assertions confirm `pendingOwner == adminSafe` on every contract before the script exits.
 
 ### C. Zero-Day Exploits vs. Governance Paralysis
 
-- **Threat:** A zero-day exploit is discovered, but the 48-hour Timelock is too slow to stop the bleeding. Conversely, giving pause/unpause power directly to a multi-sig risks an indefinite hostage situation where admins freeze funds forever.
-- **Mitigation:** The Emergency Guardian Pattern. The Operational Multi-Sig can trigger `emergencyPause()` instantly to halt capital formation and revenue routing. However, the Multi-Sig cannot unpause the system, upgrade contracts, or extract funds. Unpausing is strictly reserved for the Timelock (`onlyOwner`), requiring a 48-hour transparent governance window. This separates emergency response from administrative power.
+- **Threat:** A zero-day exploit is discovered but the governance process is too slow to stop the bleeding. Conversely, giving pause/unpause power directly to a multi-sig risks an indefinite hostage situation where admins freeze funds forever.
+- **Mitigation:** The Emergency Guardian Pattern. The Operational Multi-Sig can trigger `emergencyPause()` instantly to halt capital formation and revenue routing. However, the Multi-Sig cannot unpause the system, upgrade contracts, or extract funds. Unpausing is strictly reserved for the Admin Safe owner (`onlyOwner`). This separates emergency response (Multi-Sig) from full administrative power (Admin Safe).
 
 ### D. The Secondary Market Double-Spend (Yield Duplication)
 
@@ -70,6 +70,6 @@ The system is designed with explicit trust boundaries. We enforce the principle 
 Through rigorous Handler-based Stateful Fuzzing, the protocol has been mathematically proven to hold the following invariants under infinite chaotic interactions:
 
 - **RoC Ceiling:** A user's `rocReturned` can never exceed their `netPrincipal`.
-- **System Solvency:** The Treasury balance will always equal or exceed the total outstanding un-claimed yield + total remaining RoC buffers.
+- **System Solvency:** The Vault balances will always equal or exceed the total outstanding un-claimed yield + total remaining RoC buffers.
 - **No Ghost Tokens:** Every token minted is backed by real capital and bound to a valid deployment pool.
 - **Idempotency:** A user cannot claim yield twice without new revenue entering the system.

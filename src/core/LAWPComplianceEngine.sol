@@ -66,8 +66,8 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @notice Actor Registry for validating and pulling operational wallet addresses dynamically.
     ILAWPActorRegistry public immutable registry;
 
-    /// @notice The ERC20 token used for all deposits, fees, and yield distributions (e.g., cNGN).
-    IERC20 public immutable cngnToken;
+    /// @notice The immutable ERC20 settlement token (cNGN) for all deposits, fees, and yield distributions.
+    IERC20 public immutable cNGNToken;
 
     /// @notice Multi-Sig Controller address authorized to route revenue and trigger emergency pauses.
     address public multiSigController;
@@ -115,8 +115,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
     /// @notice Restricts execution strictly to the authorized Multi-Sig Controller.
     modifier onlyMultiSig() {
-        if (msg.sender != multiSigController) revert LAWPComplianceEngine_UnauthorizedCaller();
+        _onlyMultiSig();
         _;
+    }
+
+    function _onlyMultiSig() internal view {
+        if (msg.sender != multiSigController) revert LAWPComplianceEngine_UnauthorizedCaller();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -124,12 +128,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the Compliance Engine with essential system dependencies.
-    /// @param _admin Address of the Owner / Timelock controller.
+    /// @param _admin Address of the Owner / Admin Safe.
     /// @param _yieldVault Address of the LAWPYieldVault contract.
     /// @param _operationalVault Address of the ILAWPOperationalVault contract.
     /// @param _impactToken Address of the LAWPImpactToken contract.
     /// @param _registry Address of the LAWPActorRegistry contract.
-    /// @param _cngnToken Address of the primary ERC20 asset (cNGN).
+    /// @param _cNGNToken Address of the immutable cNGN ERC20 settlement token.
     /// @param _initialRiskFeeBPS Starting risk fee applied to all deposits (max 1000 BPS).
     constructor(
         address _admin,
@@ -137,12 +141,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         address _operationalVault,
         address _impactToken,
         address _registry,
-        address _cngnToken,
+        address _cNGNToken,
         uint256 _initialRiskFeeBPS
     ) Ownable(_admin) {
         if (
             _yieldVault == address(0) || _operationalVault == address(0)
-                || _impactToken == address(0) || _registry == address(0) || _cngnToken == address(0)
+                || _impactToken == address(0) || _registry == address(0) || _cNGNToken == address(0)
         ) {
             revert LAWPComplianceEngine_ZeroAddress();
         }
@@ -154,7 +158,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         operationalVault = ILAWPOperationalVault(_operationalVault);
         impactToken = ILAWPImpactToken(_impactToken);
         registry = ILAWPActorRegistry(_registry);
-        cngnToken = IERC20(_cngnToken);
+        cNGNToken = IERC20(_cNGNToken);
         riskFeeBPS = _initialRiskFeeBPS;
     }
 
@@ -197,7 +201,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /// @notice Unfreezes the system, allowing normal operations to resume.
-    /// @dev Strictly restricted to the Owner (Timelock) to prevent Multi-Sig administrative abuse.
+    /// @dev Strictly restricted to the Owner to prevent Multi-Sig administrative abuse.
     function unpause() external onlyOwner {
         _unpause();
         emit EngineUnpaused(msg.sender);
@@ -243,10 +247,10 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
             operationalBalances[riskPoolWallet] += riskFee;
 
-            cngnToken.safeTransferFrom(msg.sender, address(operationalVault), riskFee);
+            cNGNToken.safeTransferFrom(msg.sender, address(operationalVault), riskFee);
         }
 
-        cngnToken.safeTransferFrom(msg.sender, address(yieldVault), netCapital);
+        cNGNToken.safeTransferFrom(msg.sender, address(yieldVault), netCapital);
         emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
 
         // 4. Mint fractional shares to contributors based on net capital.
@@ -274,7 +278,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             // 100% of this specific routed amount is assigned to the Return of Contribution tracker
             poolRocTracker[_poolId] += _totalAmount;
 
-            cngnToken.safeTransferFrom(_fundProvider, address(yieldVault), _totalAmount);
+            cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), _totalAmount);
         } else if (_flowType == LAWPStructs.FlowType.GRANT_INITIAL) {
             address la2 = registry.la2Wallet();
             address mvi = registry.mvi1Wallet();
@@ -290,8 +294,8 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             operationalBalances[mvi] += mviSplit;
 
             // Physical Switchboard routing
-            cngnToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
-            cngnToken.safeTransferFrom(
+            cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
+            cNGNToken.safeTransferFrom(
                 _fundProvider, address(operationalVault), la2Split + mviSplit
             );
         } else if (_flowType == LAWPStructs.FlowType.GRANT_CONTINUOUS) {
@@ -314,8 +318,8 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             operationalBalances[devWallet] += devSplit;
 
             // Physical Switchboard routing
-            cngnToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
-            cngnToken.safeTransferFrom(
+            cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
+            cNGNToken.safeTransferFrom(
                 _fundProvider, address(operationalVault), la2Split + mviSplit + devSplit
             );
         } else {
@@ -432,7 +436,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @param _tokenId    The specific ID of the Impact Token.
     /// @param _tokenOwner The explicitly pre-fetched owner of the token to
     ///                    guarantee correct event emission.
-    /// @return            claimable The aggregate CNGN amount owed to the token.
+    /// @return            claimable The aggregate cNGN amount owed to the token.
     function _claimYieldForToken(uint256 _tokenId, address _tokenOwner)
         internal
         returns (uint256 claimable)

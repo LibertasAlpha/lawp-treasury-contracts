@@ -21,7 +21,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         assertEq(address(engine.operationalVault()), address(operationalVault));
         assertEq(address(engine.impactToken()), address(impactToken));
         assertEq(address(engine.registry()), address(registry));
-        assertEq(address(engine.cngnToken()), address(cngn));
+        assertEq(address(engine.cNGNToken()), address(cngn));
         assertEq(engine.riskFeeBPS(), RISK_FEE_BPS);
         assertEq(engine.owner(), admin);
     }

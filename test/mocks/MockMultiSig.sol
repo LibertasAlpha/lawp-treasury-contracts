@@ -11,7 +11,7 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 ///
 ///      The caller of execute() is the relayer. The relayer's address is forwarded
 ///      to the engine as `_fundProvider`. The engine then calls:
-///          cngnToken.safeTransferFrom(_fundProvider, vault, amount)
+///          cNGNToken.safeTransferFrom(_fundProvider, vault, amount)
 ///      pulling cNGN DIRECTLY from the relayer - not from this contract.
 ///
 ///      Prerequisite: The relayer must approve the ENGINE (not this contract) before

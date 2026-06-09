@@ -2,7 +2,7 @@
 
 ## Protocol Summary
 
-The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing protocol designed to bridge real-world fiat revenue (via the Planbok system) with on-chain fractional Impact Equity. By separating asset custody from routing logic through a Zero-Custody Switchboard and Dual-Treasury Architecture, the protocol translates strict non-profit (LTD/GTE) legal mandates into impassable, immutable math. It features an O(1) continuous yield engine, a 48-hour Timelock governance layer, and cryptographically verified off-chain reporting to ensure transparency, solvency, and decentralized accountability.
+The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing protocol designed to bridge real-world fiat revenue (via the Planbok system) with on-chain fractional Impact Equity. By separating asset custody from routing logic through a Zero-Custody Switchboard and Dual-Treasury Architecture, the protocol translates strict non-profit (LTD/GTE) legal mandates into impassable, immutable math. It features an O(1) continuous yield engine, direct Admin Safe governance, and cryptographically verified off-chain reporting to ensure transparency, solvency, and decentralized accountability.
 
 **Additional documentation:**
 
@@ -13,12 +13,13 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 ## Key Features
 
 - **Zero-Custody Switchboard:** The Compliance Engine holds a 0 balance, routing funds directly from the off-chain Relayer or Injector Wallet to specific vaults in a single hop.
-- **Dual-Treasury Segregation:** Pure physical separation of Investor Funds (`LAWPYieldTreasury`) and Operational/Payroll Funds (`LAWPOperationalTreasury`).
+- **Dual-Treasury Segregation:** Pure physical separation of Investor Funds (`LAWPYieldVault`) and Operational/Payroll Funds (`LAWPOperationalVault`).
 - **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
 - **Trustless Revenue Routing:** Enforces strict mathematical splits for Initial Grants (30/50/20) and Continuous Grants (10/55/25/10) without manual intervention.
 - **Atomic Transfer Hook (Double-Spend Protection):** Forcefully flushes pending yields upon ERC-721 token transfer, ensuring secondary market buyers receive a clean state.
-- **Emergency Guardian Pattern:** The Operational Multi-Sig can instantly pause the system to stop exploits, but cannot unpause or extract funds (unpausing requires a 48-hour Timelock vote).
+- **Emergency Guardian Pattern:** The Operational Multi-Sig can instantly pause the system to stop exploits, but cannot unpause or extract funds (unpausing requires the Admin Safe owner).
 - **Fractional Dust Conservation:** Absorbs all wei rounding errors natively, mathematically guaranteeing 100% protocol solvency.
+- **Immutable Settlement Token:** The cNGN token address is permanently fixed at deployment via `immutable`. Both vaults delegate to the engine, enforcing the single-asset invariant system-wide.
 
 ## System Architecture
 
@@ -28,13 +29,13 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Responsibility:** Calculates proportional equity, deducts systemic risk fees, and executes mathematical routing. Updates internal accounting ledgers and instructs the movement of tokens without holding funds.
   - **Key Functions:** `processPoolDeposit()`, `routeOperationalAllocation()`, `claimYield()`, `claimOperationalFunds()`
 
-- **LAWPYieldTreasury (Vault A: Investor Funds)**
+- **LAWPYieldVault (Vault A: Investor Funds)**
   - **Responsibility:** Subordinate vault holding Net Principal, Return of Contribution (RoC), and pending Yield. Contains no public deposit functions to prevent orphaned capital.
-  - **Key Functions:** `executeTransfer()`
+  - **Key Functions:** `executeTransfer()`, `cNGNToken()` (delegates to engine)
 
-- **LAWPOperationalTreasury (Vault B: Protocol Funds)**
+- **LAWPOperationalVault (Vault B: Protocol Funds)**
   - **Responsibility:** Subordinate vault holding Systemic Risk Fees, Dev splits, LA2, and MVI1 payouts. Contains no public deposit functions.
-  - **Key Functions:** `executeTransfer()`
+  - **Key Functions:** `executeTransfer()`, `cNGNToken()` (delegates to engine)
 
 - **LAWPImpactToken (The Equity)**
   - **Responsibility:** ERC-721 implementation representing fractional ownership of a deployment pool. Houses the state-desync interception hook.
@@ -47,10 +48,6 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 - **LAWPActorRegistry (The Directory)**
   - **Responsibility:** Centralized registry for dynamic operational wallets (LA2, MVI1, Risk Pool, Dev Team) to allow updatability without migrating the Engine.
   - **Key Functions:** `setLA2Wallet()`, `setMVI1Wallet()`
-
-- **TimelockController (The Governor)**
-  - **Responsibility:** OpenZeppelin v5 48-hour delay queue. Owns all protocol contracts and protects the community from malicious admin upgrades.
-  - **Key Functions:** `scheduleBatch()`, `executeBatch()`
 
 ### Component Interaction Flow
 
@@ -67,9 +64,9 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 4. **LAWPMultiSigController -> LAWPComplianceEngine**
    - Calls `routeOperationalAllocation()` with the validated revenue parameters.
 
-5. **LAWPComplianceEngine -> Treasuries & Internal Ledgers**
-   - The Engine pulls the Yield portion directly from the Injector Wallet to the `LAWPYieldTreasury`.
-   - The Engine pulls the Operational portion directly from the Injector Wallet to the `LAWPOperationalTreasury`.
+5. **LAWPComplianceEngine -> Vaults & Internal Ledgers**
+   - The Engine pulls the Yield portion directly from the Injector Wallet to the `LAWPYieldVault`.
+   - The Engine pulls the Operational portion directly from the Injector Wallet to the `LAWPOperationalVault`.
    - Credits the O(1) `poolYieldTracker` (for investors) and the `operationalBalances` ledger (for operators).
 
 6. **Final State**
@@ -93,10 +90,10 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 3. **Internal operations:**
    - Updates the user's `yieldClaimed` and `rocReturned` state to prevent re-entrancy and idempotency failures.
-   - Executes cross-contract call to `LAWPYieldTreasury`.
+   - Executes cross-contract call to `LAWPYieldVault`.
 
 - **Result:**
-  - `LAWPYieldTreasury` pushes the exact cNGN amount to the user's wallet.
+  - `LAWPYieldVault` pushes the exact cNGN amount to the user's wallet.
   - `YieldClaimed` event is emitted.
 
 ## State & Data Model
@@ -123,8 +120,9 @@ The protocol is mathematically secured by a Stateful Invariant Fuzzing suite (`L
 - **Invariant B (Solvency Law):** The Treasury balance will always equal or exceed the total outstanding un-claimed yield + total remaining RoC buffers.
 - **Invariant C (Dust Conservation):** Fractional math must never leak a single wei. `Sum(netPrincipal) == GrossDeposit - RiskFee`.
 - **Invariant D (The Transfer Hook):** Receiver's pending yield MUST evaluate to exactly 0 immediately post-transfer. Yield is not duplicated.
-- **No Orphaned Capital:** Treasuries lack public `deposit()` functions. All funds must pass through the Engine to be registered on an internal ledger.
-- **Vault Segregation:** `LAWPYieldTreasury` balance MUST always be >= Unclaimed Investor Liabilities. `LAWPOperationalTreasury` balance MUST always be >= Unclaimed Operational Liabilities.
+- **No Orphaned Capital:** Vaults lack public `deposit()` functions. All funds must pass through the Engine to be registered on an internal ledger.
+- **Single-Asset Invariant:** The settlement token (cNGN) is `immutable`. All vault balances and cumulative accounting trackers are permanently denominated in this token, eliminating asset-accounting drift.
+- **Vault Segregation:** `LAWPYieldVault` balance MUST always be >= Unclaimed Investor Liabilities. `LAWPOperationalVault` balance MUST always be >= Unclaimed Operational Liabilities.
 
 ### Failure Conditions
 
@@ -133,20 +131,17 @@ Reverts when:
 - `LAWPImpactToken._update()`: The token transfer attempts to execute while the Compliance Engine is paused.
 - `LAWPMultiSigController.executeProposal()`: Signatures are unordered (duplicate submission) or `v, r, s` malleability is detected.
 - `LAWPComplianceEngine.processPoolDeposit()`: Basis points (`bpsShares`) array does not sum to exactly 10,000.
-- `LAWPYieldTreasury.executeTransfer()` / `LAWPOperationalTreasury.executeTransfer()`: The caller is anyone other than the registered Compliance Engine.
+- `LAWPYieldVault.executeTransfer()` / `LAWPOperationalVault.executeTransfer()`: The caller is anyone other than the registered Compliance Engine.
 
 ## External Dependencies
 
 - **OpenZeppelin Contracts v5.0.2**
-  - **Purpose:** Provides highly audited foundational logic: `TimelockController`, `Ownable2Step`, `Pausable`, `ReentrancyGuard`, `ERC20`, `SafeERC20`, and `EIP712`.
+  - **Purpose:** Provides highly audited foundational logic: `Ownable2Step`, `Pausable`, `ReentrancyGuard`, `ERC20`, `SafeERC20`, and `EIP712`.
 - **cNGN Token (ERC20)**
-  - **Usage:** The primary fiat-backed stablecoin utilized for all capital formation, risk fees, and yield distribution.
+  - **Usage:** The immutable fiat-backed stablecoin for all capital formation, risk fees, and yield distribution. Fixed at deployment — cannot be changed.
 
 ## Configuration
 
-- **TIMELOCK_MIN_DELAY**
-  - **Description:** The minimum delay before a queued governance proposal can be executed.
-  - **Default:** 2 days (172,800 seconds)
 - **INITIAL_RISK_FEE_BPS**
   - **Description:** The systemic risk fee deducted from gross deposits to stabilize the ecosystem.
   - **Default:** 1000 (10%)
@@ -175,7 +170,8 @@ forge install
 Create `.env` file in the root directory:
 
 ```env
-PRIVATE_KEY=your_private_key
+DEPLOYER_PRIVATE_KEY=your_deployer_private_key
+ADMIN_SAFE_PRIVATE_KEY=0x...  # Private key for the Ownable2Step handover target (Admin Safe)
 BASE_SEPOLIA_RPC=https://sepolia.base.org
 BASESCAN_API_KEY=your_basescan_api_key
 
@@ -223,12 +219,11 @@ make coverage
 
 ### Deployment (Simulations & Live)
 
-We utilize an Atomic Bootstrap Pattern to secure the deployment, instantly accepting `Ownable2Step` transitions and locking out the deployer in a single block.
+We utilize an Atomic Bootstrap Pattern to deploy and immediately wire all trust boundaries. `Configure.s.sol` completes the FULL Ownable2Step handover atomically — the deployer initiates with `transferOwnership()` and the Admin Safe accepts with `acceptOwnership()` within the same script execution. No separate manual step is required.
 
 **Dry-Run / Simulate Deployments:**
 
 ```bash
-make simulate-deploy-mocks
 make simulate-deploy-core
 make simulate-configure
 ```
@@ -236,7 +231,6 @@ make simulate-configure
 **Live Testnet Broadcasts:**
 
 ```bash
-make deploy-mocks-testnet
 make deploy-core-testnet
 make configure-protocol-testnet
 ```
@@ -244,18 +238,18 @@ make configure-protocol-testnet
 ## Notes & Variants
 
 - For Emergency Pausing, use `engine.emergencyPause()` (Callable by the Multi-Sig).
-- For Unpausing, use `engine.unpause()` (Callable only by the Timelock).
-- For Governance Upgrades, use `timelock.scheduleBatch()` followed by `timelock.executeBatch()` 48 hours later.
+- For Unpausing, use `engine.unpause()` (Callable only by the Admin/Owner).
 
 ## Roadmap
 
-- [x] Phase 1-3: Engine, Treasury, Equity Tokens, fractional math.
+- [x] Phase 1-3: Engine, Vault, Equity Tokens, fractional math.
 - [x] Phase 4: Off-Chain Verification (Multi-Sig & EIP-712).
 - [x] Phase 5: Stateful Invariant Fuzzing & O(1) Gas Optimizations.
-- [x] Phase 6: Institutional Timelock Governance & Deployment Scripts.
+- [x] Phase 6: Direct Admin Safe Governance & Deployment Scripts.
 - [x] Phase 7: Dual-Treasury & Switchboard Refactoring.
-- [ ] Phase 8: External Independent Audit.
-- [ ] Phase 9: Base Mainnet Launch.
+- [x] Phase 8: Immutable cNGN Settlement Token (single-asset invariant).
+- [ ] Phase 9: External Independent Audit.
+- [ ] Phase 10: Base Mainnet Launch.
 
 ## License
 

@@ -75,7 +75,7 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the controller with the required EIP-712 domain.
-    /// @param _admin The initial owner (Timelock). Address(0) triggers native OZ v5 revert.
+    /// @param _admin The initial owner (Admin Safe). Address(0) triggers native OZ v5 revert.
     /// @param _engine The address of the deployed LAWP Compliance Engine.
     /// @param _initialSigners Array of initial board members (EOAs only).
     /// @param _initialThreshold The starting signature requirement.

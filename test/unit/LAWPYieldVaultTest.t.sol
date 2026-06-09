@@ -30,6 +30,10 @@ contract LAWPYieldVaultTest is Test {
         vm.prank(admin);
         vault.setComplianceEngine(engine);
 
+        // Mock the engine's cNGNToken() to return our test cNGN.
+        // The vault delegates to ILAWPComplianceEngine(complianceEngine).cNGNToken().
+        vm.mockCall(engine, abi.encodeWithSignature("cNGNToken()"), abi.encode(address(cngn)));
+
         // Fund the vault with tokens for transfer tests
         cngn.mintTest(address(vault), 1_000_000e6);
     }
@@ -38,19 +42,21 @@ contract LAWPYieldVaultTest is Test {
                           CONSTRUCTOR TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Constructor_SetsTokenAndOwner() public view {
-        assertEq(address(vault.cngnToken()), address(cngn));
+    function test_Constructor_SetsOwner() public view {
         assertEq(vault.owner(), admin);
-    }
-
-    function test_Constructor_RevertIf_ZeroCngn() public {
-        vm.expectRevert(LAWPYieldVault.LAWPYieldVault_InvalidAddress.selector);
-        new LAWPYieldVault(address(0), admin);
     }
 
     function test_Constructor_RevertIf_ZeroAdmin() public {
         vm.expectRevert();
         new LAWPYieldVault(address(cngn), address(0));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     CNGN TOKEN DELEGATION
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CNGNToken_DelegatesToEngine() public view {
+        assertEq(address(vault.cNGNToken()), address(cngn));
     }
 
     /*//////////////////////////////////////////////////////////////

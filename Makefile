@@ -1,11 +1,11 @@
 -include .env
 
 .PHONY: all clean build format test test-invariant coverage \
-        simulate-deploy-mocks simulate-deploy-core simulate-configure \
+        simulate-deploy-core simulate-configure \
         install-contractdev init-stagenet generate-wallet push-contracts \
-        deploy-mocks-anvil deploy-core-anvil configure-anvil \
-        deploy-mocks-stagenet deploy-core-stagenet configure-stagenet \
-        deploy-mocks-testnet deploy-core-testnet configure-protocol-testnet
+        deploy-core-anvil configure-anvil \
+        deploy-core-stagenet configure-stagenet \
+        deploy-core-testnet configure-protocol-testnet
 
 # Default RPC URL if not explicitly set in .env (Anvil)
 RPC_URL ?= http://localhost:8545
@@ -55,45 +55,33 @@ coverage:
 # Run these to verify gas estimations and payload correctness before deployment.
 # ==============================================================================
 
-simulate-deploy-mocks:
-	forge script script/DeployMock.s.sol:DeployMock --rpc-url $(RPC_URL) -vvvv
-
 simulate-deploy-core:
-	forge script script/Deploy.s.sol:Deploy --rpc-url $(RPC_URL) -vvvv
+	forge script script/Deploy.s.sol:DeployLAWPSystem --rpc-url $(RPC_URL) -vvvv
 
 simulate-configure:
-	forge script script/Configure.s.sol:Configure --rpc-url $(RPC_URL) -vvvv
+	forge script script/Configure.s.sol:ConfigureLAWPSystem --rpc-url $(RPC_URL) -vvvv
 
 
 # ==============================================================================
-# ANVIL LOCAL DEPLOYMENTS (3-step sequence against local Anvil node)
+# ANVIL LOCAL DEPLOYMENTS (2-step sequence against local Anvil node)
 # REQUIRES: `anvil` running in a separate terminal
-# Run in order: deploy-mocks-anvil -> deploy-core-anvil -> configure-anvil
+# Run in order: deploy-core-anvil -> configure-anvil
 # After each step, copy the printed contract addresses into .env
 # ==============================================================================
 
-# Step 1: Deploy mock cNGN token
-#         -> copy ADMIN_OPS_ADDRESS + CNGN_TOKEN_ADDRESS into .env
-deploy-mocks-anvil:
-	forge script script/DeployMock.s.sol:DeployMock \
-		--rpc-url $(RPC_URL) \
-		--private-key $(PRIVATE_KEY) \
-		--broadcast \
-		-vvvv
-
-# Step 2: Deploy core protocol contracts
-#         -> copy all 7 addresses (Timelock, Registry, YieldVault, OpVault,
-#           ImpactToken, Engine, MultiSig) into .env
+# Step 1: Deploy core protocol contracts
+#         -> copy all 6 addresses (Registry, YieldVault, OpVault,
+#            ImpactToken, Engine, MultiSig) into .env
 deploy-core-anvil:
-	forge script script/Deploy.s.sol:Deploy \
+	forge script script/Deploy.s.sol:DeployLAWPSystem \
 		--rpc-url $(RPC_URL) \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
 		-vvvv
 
-# Step 3: Wire contracts + execute atomic Timelock bootstrap
+# Step 2: Wire contracts + complete Ownable2Step handover to Admin Safe
 configure-anvil:
-	forge script script/Configure.s.sol:Configure \
+	forge script script/Configure.s.sol:ConfigureLAWPSystem \
 		--rpc-url $(RPC_URL) \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
@@ -130,36 +118,27 @@ push-contracts:
 
 
 # ==============================================================================
-# CONTRACT.DEV STAGENET DEPLOYMENTS (4-step sequence)
+# CONTRACT.DEV STAGENET DEPLOYMENTS (2-step sequence)
 # REQUIRES: init-stagenet + generate-wallet + push-contracts completed first.
 #           STAGENET_RPC_URL and STAGENET_PRIVATE_KEY set in .env.
-# Run in order: deploy-mocks-stagenet -> deploy-core-stagenet -> configure-stagenet
+# Run in order: deploy-core-stagenet -> configure-stagenet
 # After each step, copy the printed contract addresses into .env
 # Workspaces on the Stagenet activate automatically when matching bytecode
 # is detected - view them at app.contract.dev -> Analytics
 # ==============================================================================
 
-# Step 1: Deploy mock cNGN token to Stagenet
-#         -> copy ADMIN_OPS_ADDRESS + CNGN_TOKEN_ADDRESS into .env
-deploy-mocks-stagenet:
-	forge script script/DeployMock.s.sol:DeployMock \
-		--rpc-url $(STAGENET_RPC_URL) \
-		--private-key $(STAGENET_PRIVATE_KEY) \
-		--broadcast \
-		-vvvv
-
-# Step 2: Deploy core protocol contracts to Stagenet
-#         -> copy all 7 addresses into .env
+# Step 1: Deploy core protocol contracts to Stagenet
+#         -> copy all 6 addresses into .env
 deploy-core-stagenet:
-	forge script script/Deploy.s.sol:Deploy \
+	forge script script/Deploy.s.sol:DeployLAWPSystem \
 		--rpc-url $(STAGENET_RPC_URL) \
 		--private-key $(STAGENET_PRIVATE_KEY) \
 		--broadcast \
 		-vvvv
 
-# Step 3: Wire contracts + execute atomic Timelock bootstrap on Stagenet
+# Step 2: Wire contracts + complete Ownable2Step handover on Stagenet
 configure-stagenet:
-	forge script script/Configure.s.sol:Configure \
+	forge script script/Configure.s.sol:ConfigureLAWPSystem \
 		--rpc-url $(STAGENET_RPC_URL) \
 		--private-key $(STAGENET_PRIVATE_KEY) \
 		--broadcast \
@@ -171,19 +150,9 @@ configure-stagenet:
 # REQUIRES: PRIVATE_KEY, BASE_SEPOLIA_RPC, and BASESCAN_API_KEY in .env
 # ==============================================================================
 
-# Step 1: Deploy mock cNGN token (testnet only - production uses real cNGN)
-deploy-mocks-testnet:
-	forge script script/DeployMock.s.sol:DeployMock \
-		--rpc-url $(BASE_SEPOLIA_RPC) \
-		--private-key $(PRIVATE_KEY) \
-		--broadcast \
-		--verify \
-		--etherscan-api-key $(BASESCAN_API_KEY) \
-		-vvvv
-
-# Step 2: Deploy core protocol bytecodes
+# Step 1: Deploy core protocol bytecodes
 deploy-core-testnet:
-	forge script script/Deploy.s.sol:Deploy \
+	forge script script/Deploy.s.sol:DeployLAWPSystem \
 		--rpc-url $(BASE_SEPOLIA_RPC) \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
@@ -191,9 +160,9 @@ deploy-core-testnet:
 		--etherscan-api-key $(BASESCAN_API_KEY) \
 		-vvvv
 
-# Step 3: Wire contracts and execute atomic Timelock bootstrap
+# Step 2: Wire contracts + complete Ownable2Step handover
 configure-protocol-testnet:
-	forge script script/Configure.s.sol:Configure \
+	forge script script/Configure.s.sol:ConfigureLAWPSystem \
 		--rpc-url $(BASE_SEPOLIA_RPC) \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \

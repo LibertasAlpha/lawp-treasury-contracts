@@ -1,4 +1,4 @@
 /** @type {import('contract.dev').Config} */
 module.exports = {
-  rpcUrl: "https://rpc.contract.dev/ab7fd2a406593939acfb8947838f481e",
+  rpcUrl: "https://rpc.contract.dev/40f14f3f85af1f5b115090e3902a9cee",
 };

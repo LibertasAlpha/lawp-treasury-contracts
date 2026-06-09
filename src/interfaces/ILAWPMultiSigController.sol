@@ -56,13 +56,13 @@ interface ILAWPMultiSigController {
         bytes calldata signatures
     ) external;
 
-    /// @notice Adds a new authorized signer to the board. Callable only by Admin/Timelock.
+    /// @notice Adds a new authorized signer to the board. Callable only by the Admin/Owner.
     function addSigner(address _signer) external;
 
-    /// @notice Removes an authorized signer from the board. Callable only by Admin/Timelock.
+    /// @notice Removes an authorized signer from the board. Callable only by the Admin/Owner.
     function removeSigner(address _signer) external;
 
     /// @notice Updates the required number of signatures for execution.
-    ///         Callable only by Admin/Timelock.
+    ///         Callable only by the Admin/Owner.
     function updateThreshold(uint256 _newThreshold) external;
 }

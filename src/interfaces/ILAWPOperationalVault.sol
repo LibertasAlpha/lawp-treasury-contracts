@@ -15,7 +15,7 @@ interface ILAWPOperationalVault {
     /// @notice Emitted when the Engine explicitly commands the vault to move capital.
     event OperationalTransferExecuted(address indexed to, uint256 amount);
 
-    /// @notice Emitted when the Timelock owner updates the recognized Compliance Engine.
+    /// @notice Emitted when the Admin updates the recognized Compliance Engine.
     event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
 
     /*//////////////////////////////////////////////////////////////
@@ -34,6 +34,6 @@ interface ILAWPOperationalVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Updates the recognized Compliance Engine.
-    /// @dev Restricted to the Timelock owner.
+    /// @dev Restricted to the Admin/Owner.
     function setComplianceEngine(address _newEngine) external;
 }

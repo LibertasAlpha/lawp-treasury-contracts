@@ -8,7 +8,7 @@ import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
 /// @title LAWPActorRegistry
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Centralized directory for operational addresses (LA2, MVI1, Risk Pool).
-/// @dev Inherits Ownable. Ownership will be transferred to the TimelockController.
+/// @dev Inherits Ownable. Ownership is held by the Admin Safe.
 contract LAWPActorRegistry is ILAWPActorRegistry, Ownable2Step {
     /*//////////////////////////////////////////////////////////////
                          ACTOR REGISTRY ERRORS
@@ -35,8 +35,8 @@ contract LAWPActorRegistry is ILAWPActorRegistry, Ownable2Step {
     ///         Direct, fixed allocation for continuous technical support and platform innovation.
     address public devWallet;
 
-    /// @notice Initializes the registry with the initial Timelock/Admin address.
-    /// @param _initialAdmin The address of the Timelock controller.
+    /// @notice Initializes the registry with the initial Admin Safe / deployer address.
+    /// @param _initialAdmin The address of the initial owner.
     constructor(address _initialAdmin) Ownable(_initialAdmin) { }
 
     /// @dev Overridden to prevent accidental renunciation of ownership.
