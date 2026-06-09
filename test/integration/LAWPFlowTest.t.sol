@@ -220,7 +220,7 @@ contract LAWPFlowTest is LAWPTestBase {
     //////////////////////////////////////////////////////////////*/
 
     function test_Pause_BlocksAllFlows() public {
-        vm.prank(address(mockMultiSig));
+        vm.prank(admin);
         engine.emergencyPause();
 
         // Deposit blocked

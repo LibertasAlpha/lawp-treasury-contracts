@@ -17,9 +17,9 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 - **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
 - **Trustless Revenue Routing:** Enforces strict mathematical splits for Initial Grants (30/50/20) and Continuous Grants (10/55/25/10) without manual intervention.
 - **Atomic Transfer Hook (Double-Spend Protection):** Forcefully flushes pending yields upon ERC-721 token transfer, ensuring secondary market buyers receive a clean state.
-- **Emergency Guardian Pattern:** The Admin Safe owner can instantly pause/unpause the system mitigate potential exploits or systemic risks.
+- **Emergency Guardian Pattern:** The Admin Safe owner can instantly pause/unpause the system to mitigate potential exploits or systemic risks.
 - **Fractional Dust Conservation:** Absorbs all wei rounding errors natively, mathematically guaranteeing 100% protocol solvency.
-- **Immutable Settlement Token:** The cNGN token address is permanently fixed at deployment via `immutable`. Both vaults delegate to the engine, enforcing the single-asset invariant system-wide.
+- **Immutable Settlement Token:** The cNGN token address is permanently fixed at deployment via `immutable` for all deposits, fees, and yield distributions.
 
 ## System Architecture
 
@@ -31,11 +31,11 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 - **LAWPYieldVault (Vault A: Investor Funds)**
   - **Responsibility:** Subordinate vault holding Net Principal, Return of Contribution (RoC), and pending Yield. Contains no public deposit functions to prevent orphaned capital.
-  - **Key Functions:** `executeTransfer()`, `cNGNToken()` (delegates to engine)
+  - **Key Functions:** `executeTransfer()`
 
 - **LAWPOperationalVault (Vault B: Protocol Funds)**
   - **Responsibility:** Subordinate vault holding Systemic Risk Fees, Dev splits, LA2, and MVI1 payouts. Contains no public deposit functions.
-  - **Key Functions:** `executeTransfer()`, `cNGNToken()` (delegates to engine)
+  - **Key Functions:** `executeTransfer()`
 
 - **LAWPImpactToken (The Equity)**
   - **Responsibility:** ERC-721 implementation representing fractional ownership of a deployment pool. Houses the state-desync interception hook.

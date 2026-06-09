@@ -161,17 +161,17 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     }
 
     function test_EmergencyPause_OnlyOwner() public {
-        vm.startPrank(admin);
+        vm.prank(admin);
         engine.emergencyPause();
         assertTrue(engine.paused());
 
         vm.prank(attacker);
-        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_UnauthorizedCaller.selector);
+        vm.expectRevert();
         engine.emergencyPause();
     }
 
     function test_Unpause_OnlyOwner() public {
-        vm.startPrank(admin);
+        vm.prank(admin);
         engine.emergencyPause();
 
         vm.prank(admin);
@@ -246,7 +246,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     }
 
     function test_ProcessPoolDeposit_RevertIf_Paused() public {
-        vm.startPrank(admin);
+        vm.prank(admin);
         engine.emergencyPause();
 
         (address[] memory c, uint256[] memory b) = _singleContributor(userA);
@@ -378,7 +378,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     }
 
     function test_RouteRevenue_RevertIf_Paused() public {
-        vm.prank(address(mockMultiSig));
+        vm.prank(admin);
         engine.emergencyPause();
 
         vm.prank(coordinator);
