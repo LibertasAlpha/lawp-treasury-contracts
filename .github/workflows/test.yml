@@ -1,14 +1,18 @@
 name: CI
 
-permissions: {}
+permissions:
+  contents: read
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
-env:
-  FOUNDRY_PROFILE: ci
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -16,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
     steps:
       - uses: actions/checkout@v5
         with:
@@ -30,6 +35,9 @@ jobs:
 
       - name: Run Forge fmt
         run: forge fmt --check
+
+      - name: Run Forge lint
+        run: forge lint
 
       - name: Run Forge build
         run: forge build --sizes

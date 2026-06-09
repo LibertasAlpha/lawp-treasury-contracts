@@ -24,9 +24,9 @@ This document serves as the absolute source of truth for the stateful testing su
 
 ## 3. The "Dumb Vault" Separation
 
-**Definition:** To minimize upgrade vulnerability and separate asset custody from business logic, `LAWPTreasury` operates strictly as a "Dumb Vault."
+**Definition:** To minimize upgrade vulnerability and separate asset custody from business logic, the Vaults (`LAWPYieldVault` and `LAWPOperationalVault`) operate strictly as "Dumb Vaults."
 
-**Invariant (Vault Subordination):** The Treasury holds 100% of the locked assets but contains zero routing logic. It MUST revert any execution command that does not originate explicitly from the authenticated `LAWPComplianceEngine`.
+**Invariant (Vault Subordination):** The Vaults hold 100% of the locked assets but contain zero routing logic. They MUST revert any execution command that does not originate explicitly from the authenticated `LAWPComplianceEngine`.
 
 ## 4. Formal Stateful Fuzzing Assertions (The Laws of Physics)
 
@@ -34,7 +34,7 @@ These invariants are explicitly asserted in `test/invariant/LAWPInvariants.t.sol
 
 **Invariant A (RoC Ceiling):** A user's `rocReturned` can NEVER exceed their `netPrincipal`. Globally, `Sum(rocReturned) <= Sum(netPrincipal)`.
 
-**Invariant B (Solvency Law / Bankruptcy Preventer):** The Treasury must ALWAYS have enough balance to cover every single un-claimed obligation. `TreasuryBalance >= (TotalNetDeposits + TotalYieldRouted) - (TotalClaimedYield + TotalClaimedRoC)`.
+**Invariant B (Solvency Law / Bankruptcy Preventer):** The Vaults must ALWAYS have enough balance to cover every single un-claimed obligation. `VaultBalances >= (TotalNetDeposits + TotalYieldRouted) - (TotalClaimedYield + TotalClaimedRoC)`.
 
 **Invariant C (Dust Conservation):** Fractional math must NEVER leak a single wei. `Sum(netPrincipal)` across all tokens in a pool must exactly equal `PoolGrossDeposit - RiskFee`. All remainder dust is natively absorbed by the final array index.
 

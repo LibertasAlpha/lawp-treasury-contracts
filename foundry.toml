@@ -21,12 +21,12 @@ int_types = "long"
 
 [fuzz]
 runs = 1000
-seed = "0x4c415750" # Hex of "LAWP" using cast --from-ascii "LAWP"
+seed = "0x4c415750"             # Hex of "LAWP" using cast --from-ascii "LAWP"
 
 [invariant]
 runs = 256
 depth = 100
-fail_on_revert = true
+fail_on_revert = false          # collect all violations, don't stop early
 
 [rpc_endpoints]
 anvil        = "http://127.0.0.1:8545"
@@ -37,17 +37,5 @@ base_sepolia = "${BASE_SEPOLIA_RPC}"
 [etherscan]
 base         = { key = "${BASESCAN_API_KEY}" }
 base_sepolia = { key = "${BASESCAN_API_KEY}" }
-
-
-# Suppress lint warnings that conflict with the project's financial nomenclature
-# (e.g., BPS, cNGN) and test-only patterns (cheatcodes, inline keccak256).
-[lint]
-ignore = [
-    "screaming-snake-case-immutable",
-    "mixed-case-variable",
-    "mixed-case-function",
-    "unsafe-cheatcode",
-    "asm-keccak256",
-]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

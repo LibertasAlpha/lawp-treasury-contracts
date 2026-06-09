@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.30;
 
 import { LAWPTestBase } from "../base/LAWPTestBase.sol";
 import { LAWPMultiSigController } from "../../src/core/LAWPMultiSigController.sol";

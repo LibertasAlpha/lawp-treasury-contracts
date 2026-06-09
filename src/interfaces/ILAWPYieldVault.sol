@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.30;
 
 /// @title ILAWPYieldVault
 /// @notice Dedicated vault for isolating Investor Principal, RoC, and Yield.

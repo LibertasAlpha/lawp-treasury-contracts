@@ -117,7 +117,7 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 The protocol is mathematically secured by a Stateful Invariant Fuzzing suite (`LAWPInvariants.t.sol`) tested across 10,000+ depths per run.
 
 - **Invariant A (RoC Ceiling):** A user's `rocReturned` can never exceed their `netPrincipal`.
-- **Invariant B (Solvency Law):** The Treasury balance will always equal or exceed the total outstanding un-claimed yield + total remaining RoC buffers.
+- **Invariant B (Solvency Law):** The Vault balances will always equal or exceed the total outstanding un-claimed yield + total remaining RoC buffers.
 - **Invariant C (Dust Conservation):** Fractional math must never leak a single wei. `Sum(netPrincipal) == GrossDeposit - RiskFee`.
 - **Invariant D (The Transfer Hook):** Receiver's pending yield MUST evaluate to exactly 0 immediately post-transfer. Yield is not duplicated.
 - **No Orphaned Capital:** Vaults lack public `deposit()` functions. All funds must pass through the Engine to be registered on an internal ledger.
@@ -177,8 +177,6 @@ BASESCAN_API_KEY=your_basescan_api_key
 
 CNGN_TOKEN_ADDRESS=0x...
 BASE_URI=ipfs://your-base-uri/
-
-ADMIN_SAFE_ADDRESS=0x...
 BOARD_SIGNER_1=0x...
 BOARD_SIGNER_2=0x...
 BOARD_SIGNER_3=0x...

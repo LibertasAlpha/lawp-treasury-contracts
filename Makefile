@@ -75,7 +75,7 @@ simulate-configure:
 deploy-core-anvil:
 	forge script script/Deploy.s.sol:DeployLAWPSystem \
 		--rpc-url $(RPC_URL) \
-		--private-key $(PRIVATE_KEY) \
+		--private-key $(DEPLOYER_PRIVATE_KEY) \
 		--broadcast \
 		-vvvv
 
@@ -83,7 +83,7 @@ deploy-core-anvil:
 configure-anvil:
 	forge script script/Configure.s.sol:ConfigureLAWPSystem \
 		--rpc-url $(RPC_URL) \
-		--private-key $(PRIVATE_KEY) \
+		--private-key $(DEPLOYER_PRIVATE_KEY) \
 		--broadcast \
 		-vvvv
 
@@ -147,14 +147,14 @@ configure-stagenet:
 
 # ==============================================================================
 # BASE SEPOLIA TESTNET DEPLOYMENTS
-# REQUIRES: PRIVATE_KEY, BASE_SEPOLIA_RPC, and BASESCAN_API_KEY in .env
+# REQUIRES: DEPLOYER_PRIVATE_KEY, BASE_SEPOLIA_RPC, and BASESCAN_API_KEY in .env
 # ==============================================================================
 
 # Step 1: Deploy core protocol bytecodes
 deploy-core-testnet:
 	forge script script/Deploy.s.sol:DeployLAWPSystem \
 		--rpc-url $(BASE_SEPOLIA_RPC) \
-		--private-key $(PRIVATE_KEY) \
+		--private-key $(DEPLOYER_PRIVATE_KEY) \
 		--broadcast \
 		--verify \
 		--etherscan-api-key $(BASESCAN_API_KEY) \
@@ -164,7 +164,7 @@ deploy-core-testnet:
 configure-protocol-testnet:
 	forge script script/Configure.s.sol:ConfigureLAWPSystem \
 		--rpc-url $(BASE_SEPOLIA_RPC) \
-		--private-key $(PRIVATE_KEY) \
+		--private-key $(DEPLOYER_PRIVATE_KEY) \
 		--broadcast \
 		--verify \
 		--etherscan-api-key $(BASESCAN_API_KEY) \
