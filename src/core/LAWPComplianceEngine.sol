@@ -194,14 +194,14 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /// @notice Instantly freezes capital formation and revenue routing in emergencies.
-    /// @dev Action is strictly restricted to the Multi-Sig Controller to allow rapid response.
-    function emergencyPause() external onlyMultiSig {
+    /// @dev Designed as a critical safety mechanism to mitigate potential exploits or systemic risks. Only the Owner can trigger this to ensure deliberate action during crises.
+    function emergencyPause() external onlyOwner {
         _pause();
         emit EnginePaused(msg.sender);
     }
 
     /// @notice Unfreezes the system, allowing normal operations to resume.
-    /// @dev Strictly restricted to the Owner to prevent Multi-Sig administrative abuse.
+    /// @dev Strictly restricted to the Only Owner to ensure deliberate and secure unpausing after an emergency.
     function unpause() external onlyOwner {
         _unpause();
         emit EngineUnpaused(msg.sender);

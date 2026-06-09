@@ -17,7 +17,7 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 - **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
 - **Trustless Revenue Routing:** Enforces strict mathematical splits for Initial Grants (30/50/20) and Continuous Grants (10/55/25/10) without manual intervention.
 - **Atomic Transfer Hook (Double-Spend Protection):** Forcefully flushes pending yields upon ERC-721 token transfer, ensuring secondary market buyers receive a clean state.
-- **Emergency Guardian Pattern:** The Operational Multi-Sig can instantly pause the system to stop exploits, but cannot unpause or extract funds (unpausing requires the Admin Safe owner).
+- **Emergency Guardian Pattern:** The Admin Safe owner can instantly pause/unpause the system mitigate potential exploits or systemic risks.
 - **Fractional Dust Conservation:** Absorbs all wei rounding errors natively, mathematically guaranteeing 100% protocol solvency.
 - **Immutable Settlement Token:** The cNGN token address is permanently fixed at deployment via `immutable`. Both vaults delegate to the engine, enforcing the single-asset invariant system-wide.
 

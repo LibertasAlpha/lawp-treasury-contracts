@@ -160,8 +160,8 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         vm.stopPrank();
     }
 
-    function test_EmergencyPause_OnlyMultiSig() public {
-        vm.prank(address(mockMultiSig));
+    function test_EmergencyPause_OnlyOwner() public {
+        vm.startPrank(admin);
         engine.emergencyPause();
         assertTrue(engine.paused());
 
@@ -171,7 +171,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     }
 
     function test_Unpause_OnlyOwner() public {
-        vm.prank(address(mockMultiSig));
+        vm.startPrank(admin);
         engine.emergencyPause();
 
         vm.prank(admin);
@@ -246,7 +246,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     }
 
     function test_ProcessPoolDeposit_RevertIf_Paused() public {
-        vm.prank(address(mockMultiSig));
+        vm.startPrank(admin);
         engine.emergencyPause();
 
         (address[] memory c, uint256[] memory b) = _singleContributor(userA);
