@@ -82,7 +82,7 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     constructor(
         address _admin,
         address _engine,
-        address[] calldata _initialSigners,
+        address[] memory _initialSigners,
         uint256 _initialThreshold
     ) Ownable(_admin) EIP712("LAWP MultiSig", "1") {
         if (_engine == address(0)) {
