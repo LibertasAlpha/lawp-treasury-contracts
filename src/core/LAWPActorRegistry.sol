@@ -7,7 +7,7 @@ import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
 
 /// @title LAWPActorRegistry
 /// @author Obinna Franklin Duru (BinnaDev)
-/// @notice Centralized directory for operational addresses (LA2, MVI1, Risk Pool).
+/// @notice Centralized directory for operational addresses (LA2, MVI1, Operational Treasury, Dev).
 /// @dev Inherits Ownable. Ownership is held by the Admin Safe.
 contract LAWPActorRegistry is ILAWPActorRegistry, Ownable2Step {
     /*//////////////////////////////////////////////////////////////
@@ -20,19 +20,22 @@ contract LAWPActorRegistry is ILAWPActorRegistry, Ownable2Step {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice LA2 (Project Management) wallet address responsible for
-    ///         High allocation for operational stability and factory upkeep.
+    ///         high allocation for operational stability and factory upkeep.
     address public la2Wallet;
 
     /// @notice MVI1 (System Treasury) wallet address responsible for
-    ///         Increased ecosystem funding for governance and new MVI launches.
+    ///         increased ecosystem funding for governance and new MVI launches.
     address public mvi1Wallet;
 
-    /// @notice Risk Management Pool wallet address responsible for
-    ///         holding funds allocated for risk mitigation and coverage.
-    address public riskPoolWallet;
+    /// @notice Operational Treasury wallet - the unified custodian for campaign capital.
+    ///         Receives both the systemic risk fee and the full net campaign capital
+    ///         on every pool deposit. Funds are held in the Operational Vault and
+    ///         claimed by this wallet to execute real-world campaign objectives
+    ///         (e.g., purchasing bottles for LAWP deployment).
+    address public operationalTreasuryWallet;
 
     /// @notice DApp Team (Dev) wallet address responsible for
-    ///         Direct, fixed allocation for continuous technical support and platform innovation.
+    ///         direct, fixed allocation for continuous technical support and platform innovation.
     address public devWallet;
 
     /// @notice Initializes the registry with the initial Admin Safe / deployer address.
@@ -67,15 +70,17 @@ contract LAWPActorRegistry is ILAWPActorRegistry, Ownable2Step {
         emit ActorUpdated("MVI1", oldWallet, _mvi1Wallet);
     }
 
-    /// @notice Updates the Risk Management Pool wallet.
-    /// @param _riskPoolWallet The new address for the Risk Pool wallet.
-    function setRiskPoolWallet(address _riskPoolWallet) external onlyOwner {
-        if (_riskPoolWallet == address(0)) revert LAWPActorRegistry_ZeroAddress();
+    /// @notice Updates the Operational Treasury wallet.
+    /// @dev    The Operational Treasury is the unified custodian receiving both the
+    ///         systemic risk fee and the net campaign capital on every pool deposit.
+    /// @param _operationalTreasuryWallet The new address for the Operational Treasury wallet.
+    function setOperationalTreasuryWallet(address _operationalTreasuryWallet) external onlyOwner {
+        if (_operationalTreasuryWallet == address(0)) revert LAWPActorRegistry_ZeroAddress();
 
-        address oldWallet = riskPoolWallet;
-        riskPoolWallet = _riskPoolWallet;
+        address oldWallet = operationalTreasuryWallet;
+        operationalTreasuryWallet = _operationalTreasuryWallet;
 
-        emit ActorUpdated("RISK_POOL", oldWallet, _riskPoolWallet);
+        emit ActorUpdated("OPERATIONAL_TREASURY", oldWallet, _operationalTreasuryWallet);
     }
 
     /// @notice Updates the DApp Team (Dev) wallet.

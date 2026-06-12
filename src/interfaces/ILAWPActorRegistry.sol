@@ -9,7 +9,7 @@ interface ILAWPActorRegistry {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted when a core actor's wallet address is updated (LA2, MVI1, Risk Pool, Dev).
+    /// @notice Emitted when a core actor's wallet address is updated (LA2, MVI1, Operational Treasury, Dev).
     event ActorUpdated(string role, address indexed oldAddress, address indexed newAddress);
 
     /*//////////////////////////////////////////////////////////////
@@ -29,12 +29,16 @@ interface ILAWPActorRegistry {
     /// @return Returns the MVI1 (System Treasury) wallet address.
     function mvi1Wallet() external view returns (address);
 
-    /// @notice Funds risk mitigation efforts, coverage,
-    ///         and is the source pool for the dynamic MVI Risk Pool Grants.
-    /// @dev    This wallet is responsible for managing the risk pool
-    ///         and ensuring proper risk mitigation.
-    /// @return Returns the Risk Management Pool wallet address.
-    function riskPoolWallet() external view returns (address);
+    /// @notice Receives and custodies all incoming campaign capital.
+    ///         This includes the systemic risk fee (operational risk assumption)
+    ///         and the full net campaign capital (funds for campaign execution,
+    ///         e.g., purchasing bottles for LAWP deployment).
+    ///         Both components flow through this single trusted wallet into
+    ///         the Operational Vault for campaign-lifecycle spending.
+    /// @dev    This wallet is the unified operational treasury for each campaign pool.
+    ///         It is admin-controlled via the Actor Registry (Ownable2Step).
+    /// @return Returns the Operational Treasury wallet address.
+    function operationalTreasuryWallet() external view returns (address);
 
     /// @notice Funds the development of the decentralized application,
     ///         and is the source pool for the dynamic MVI Dev Grants.

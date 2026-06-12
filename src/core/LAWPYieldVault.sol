@@ -10,8 +10,10 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 
 /// @title LAWPYieldVault
 /// @author Obinna Franklin Duru (BinnaDev)
-/// @notice Securely isolates Investor capital (Principal, RoC, and Yield).
-/// @dev Designed to evolve independently from operational funds if future lockup/vesting logic is needed for investors.
+/// @notice Securely isolates Investor RoC and Continuous Yield.
+/// @dev Funded exclusively by revenue routing (GRANT_INITIAL, GRANT_CONTINUOUS, RoC flows).
+///      Campaign principal is NOT held here - it routes to the Operational Vault at deposit time.
+///      Designed to evolve independently if future lockup/vesting logic is needed for investors.
 contract LAWPYieldVault is ILAWPYieldVault, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 

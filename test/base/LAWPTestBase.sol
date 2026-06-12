@@ -18,8 +18,10 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 ///
 ///      processPoolDeposit (deposit flow):
 ///        coordinator -> engine.processPoolDeposit(poolId, gross, contributors, bps)
-///        engine does: safeTransferFrom(msg.sender=coordinator, operationalVault, riskFee)
-///                     safeTransferFrom(msg.sender=coordinator, yieldVault, netCapital)
+///        engine does: operationalTreasuryWallet = registry.operationalTreasuryWallet()
+///                     operationalBalances[operationalTreasuryWallet] += riskFee (if > 0)
+///                     operationalBalances[operationalTreasuryWallet] += netCapital
+///                     safeTransferFrom(msg.sender=coordinator, operationalVault, _grossAmount)
 ///        Approval needed: coordinator -> approves ENGINE
 ///
 ///      routeOperationalAllocation (revenue routing flow):
@@ -30,7 +32,9 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 ///
 ///      Both flows share the SAME approval (coordinator -> engine).
 ///      MockMultiSig holds ZERO cNGN at all times.
-///      Only LAWPYieldVault and LAWPOperationalVault hold protocol cNGN.
+///      After deposit: only LAWPOperationalVault holds cNGN (full gross amount).
+///      After revenue routing: LAWPYieldVault accumulates collective yield and RoC.
+///      LAWPYieldVault holds ZERO cNGN immediately after a bare deposit.
 abstract contract LAWPTestBase is Test {
     /*//////////////////////////////////////////////////////////////
                               CONTRACTS
@@ -57,7 +61,7 @@ abstract contract LAWPTestBase is Test {
 
     address public la2Wallet = address(3);
     address public mvi1Wallet = address(4);
-    address public riskPoolWallet = address(5);
+    address public operationalTreasuryWallet = address(5);
     address public devWallet = address(6);
 
     address public userA = address(10);
@@ -99,7 +103,7 @@ abstract contract LAWPTestBase is Test {
         vm.startPrank(admin);
         registry.setLA2Wallet(la2Wallet);
         registry.setMVI1Wallet(mvi1Wallet);
-        registry.setRiskPoolWallet(riskPoolWallet);
+        registry.setOperationalTreasuryWallet(operationalTreasuryWallet);
         registry.setDevWallet(devWallet);
         vm.stopPrank();
     }
@@ -163,10 +167,12 @@ abstract contract LAWPTestBase is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Standard 2-contributor deposit: pool 1, 100_000e6 gross.
-    ///         riskFee = 10_000e6 -> operationalVault
-    ///         netCapital = 90_000e6 -> yieldVault
-    ///         Token 1 -> userA: 54_000e6, BPS=6000
-    ///         Token 2 -> userB: 36_000e6, BPS=4000
+    ///         Full gross (100_000e6) -> operationalVault in a single transfer.
+    ///         operationalBalances[operationalTreasuryWallet]:
+    ///           riskFee component  = 10_000e6
+    ///           netCapital component = 90_000e6
+    ///         Token 1 -> userA: netPrincipal=54_000e6, BPS=6000
+    ///         Token 2 -> userB: netPrincipal=36_000e6, BPS=4000
     function _setupStandardDeposit() internal {
         address[] memory c = new address[](2);
         c[0] = userA;

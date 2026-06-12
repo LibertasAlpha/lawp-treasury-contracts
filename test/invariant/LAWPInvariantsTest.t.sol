@@ -59,7 +59,7 @@ contract LAWPInvariantsTest is Test {
     address public admin = address(1);
     address public la2 = address(11);
     address public mvi1 = address(12);
-    address public riskPool = address(13);
+    address public operationalTreasury = address(13);
     address public dev = address(14);
 
     /*//////////////////////////////////////////////////////////////
@@ -78,7 +78,7 @@ contract LAWPInvariantsTest is Test {
         vm.startPrank(admin);
         registry.setLA2Wallet(la2);
         registry.setMVI1Wallet(mvi1);
-        registry.setRiskPoolWallet(riskPool);
+        registry.setOperationalTreasuryWallet(operationalTreasury);
         registry.setDevWallet(dev);
         vm.stopPrank();
 
@@ -187,8 +187,6 @@ contract LAWPInvariantsTest is Test {
 
         for (uint256 i = 0; i < len; i++) {
             uint256 poolId = handler.activePools(i);
-            // Net deposits = investor principal locked in this vault
-            totalObligations += handler.ghost_poolNetDeposits(poolId);
             // Collective yield routed to this pool's investors
             totalObligations += handler.ghost_poolYieldRouted(poolId);
             // RoC routed to this pool's investors
@@ -197,7 +195,7 @@ contract LAWPInvariantsTest is Test {
 
         uint256 totalClaimed = handler.ghost_totalClaimedYield() + handler.ghost_totalClaimedRoc();
         uint256 netObligations =
-            totalObligations > totalClaimed ? totalObligations - totalClaimed : 0;
+            totalObligations == totalClaimed ? totalObligations - totalClaimed : 0;
 
         assertGe(
             vaultBalance,
@@ -389,9 +387,9 @@ contract LAWPInvariantsTest is Test {
         // Sum all currently unclaimed operational balances.
         // These are the protocol's IOUs - the vault must be able to honour them.
         uint256 totalLedger = engine.operationalBalances(la2) + engine.operationalBalances(mvi1)
-            + engine.operationalBalances(dev) + engine.operationalBalances(riskPool);
+            + engine.operationalBalances(dev) + engine.operationalBalances(operationalTreasury);
 
-        assertGe(
+        assertEq(
             vaultBalance,
             totalLedger,
             "Invariant J: OperationalVault INSOLVENT - cannot honour ledger obligations"

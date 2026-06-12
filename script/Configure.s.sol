@@ -78,7 +78,7 @@ contract ConfigureLAWPSystem is Script {
     function _configureActorRegistry() internal {
         actorRegistry.setLA2Wallet(vm.envAddress("LA2_WALLET"));
         actorRegistry.setMVI1Wallet(vm.envAddress("MVI1_WALLET"));
-        actorRegistry.setRiskPoolWallet(vm.envAddress("RISK_POOL_WALLET"));
+        actorRegistry.setOperationalTreasuryWallet(vm.envAddress("OPERATIONAL_TREASURY_WALLET"));
         actorRegistry.setDevWallet(vm.envAddress("DEV_WALLET"));
     }
 

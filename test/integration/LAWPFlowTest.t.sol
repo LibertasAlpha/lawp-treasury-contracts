@@ -31,7 +31,6 @@ contract LAWPFlowTest is LAWPTestBase {
         }
 
         uint256 grossDeposit = 100_000e6;
-        uint256 riskFee = 10_000e6; // 10%
         // uint256 netCapital = 90_000e6;
         uint256 perUserNet = 9_000e6; // 10% of netCapital
 
@@ -40,9 +39,10 @@ contract LAWPFlowTest is LAWPTestBase {
         vm.prank(coordinator);
         engine.processPoolDeposit(1, grossDeposit, users, bps);
 
-        // Verify vault balances
-        assertEq(cngn.balanceOf(address(yieldVault)), grossDeposit - riskFee); // net in yieldVault
-        assertEq(cngn.balanceOf(address(operationalVault)), riskFee);
+        // Verify vault balances - full gross amount routed to operationalVault.
+        // yieldVault holds zero: it is funded only by subsequent revenue routing.
+        assertEq(cngn.balanceOf(address(operationalVault)), grossDeposit);
+        assertEq(cngn.balanceOf(address(yieldVault)), 0);
         // Engine and MockMultiSig hold zero
         assertEq(cngn.balanceOf(address(engine)), 0);
         assertEq(cngn.balanceOf(address(mockMultiSig)), 0);

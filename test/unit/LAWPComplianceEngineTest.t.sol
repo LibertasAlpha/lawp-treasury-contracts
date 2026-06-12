@@ -199,9 +199,15 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         vm.prank(coordinator);
         engine.processPoolDeposit(1, gross, c, b);
 
-        // Fee split
-        assertEq(cngn.balanceOf(address(operationalVault)), opBefore + expectedRiskFee);
-        assertEq(cngn.balanceOf(address(yieldVault)), yieldBefore + expectedNet);
+        // Full gross amount routed to operationalVault in a single transfer.
+        // yieldVault receives nothing at deposit time.
+        assertEq(cngn.balanceOf(address(operationalVault)), opBefore + gross);
+        assertEq(cngn.balanceOf(address(yieldVault)), yieldBefore);
+
+        // Internal ledger: riskFee + netCapital credited to operationalTreasuryWallet.
+        assertEq(
+            engine.operationalBalances(operationalTreasuryWallet), expectedRiskFee + expectedNet
+        );
 
         // Pool registered
         (bool exists,) = engine.pools(1);
@@ -570,8 +576,10 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
         _setupStandardDeposit();
 
-        assertGe(cngn.balanceOf(address(yieldVault)), yieldBefore);
+        // operationalVault grows by the full gross amount (risk fee + net capital).
+        // yieldVault is unchanged at deposit time - it only grows via revenue routing.
         assertGe(cngn.balanceOf(address(operationalVault)), opBefore);
+        assertEq(cngn.balanceOf(address(yieldVault)), yieldBefore);
     }
 
     /*//////////////////////////////////////////////////////////////

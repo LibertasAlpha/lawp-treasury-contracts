@@ -70,7 +70,7 @@ contract DeploymentScriptsTest is Test {
 
         vm.setEnv("LA2_WALLET", vm.toString(address(0xAA)));
         vm.setEnv("MVI1_WALLET", vm.toString(address(0xBB)));
-        vm.setEnv("RISK_POOL_WALLET", vm.toString(address(0xCC)));
+        vm.setEnv("OPERATIONAL_TREASURY_WALLET", vm.toString(address(0xCC)));
         vm.setEnv("DEV_WALLET", vm.toString(address(0xDD)));
     }
 
@@ -133,7 +133,7 @@ contract DeploymentScriptsTest is Test {
         // ----------------------------
         assertEq(LAWPActorRegistry(registryAddress).la2Wallet(), address(0xAA));
         assertEq(LAWPActorRegistry(registryAddress).mvi1Wallet(), address(0xBB));
-        assertEq(LAWPActorRegistry(registryAddress).riskPoolWallet(), address(0xCC));
+        assertEq(LAWPActorRegistry(registryAddress).operationalTreasuryWallet(), address(0xCC));
         assertEq(LAWPActorRegistry(registryAddress).devWallet(), address(0xDD));
     }
 

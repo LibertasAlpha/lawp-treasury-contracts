@@ -244,9 +244,8 @@ contract LAWPHandler is Test {
         ghost_poolGrossDeposits[poolId] = amount;
         ghost_poolNetDeposits[poolId] = netCapital;
 
-        // yieldVault receives the net capital; opVault receives only the risk fee.
-        ghost_yieldVaultInflow += netCapital;
-        ghost_opVaultInflow += riskFee;
+        // opVault receives both the risk fee and net capital.
+        ghost_opVaultInflow += (riskFee + netCapital);
 
         // 6. Snapshot minted token data for Invariant L (Immutability)
         // Token IDs are sequential starting at 1. The next batch of IDs starts

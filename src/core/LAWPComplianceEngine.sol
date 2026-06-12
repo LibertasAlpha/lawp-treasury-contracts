@@ -54,7 +54,9 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Dedicated vault for isolating Investor Principal, RoC, and Yield.
+    /// @notice Dedicated vault for isolating Investor RoC and Continuous Yield.
+    ///         Funded exclusively by revenue routing (GRANT_INITIAL, GRANT_CONTINUOUS, RoC).
+    ///         No campaign principal is held here - deposit capital flows to the Operational Vault.
     ILAWPYieldVault public immutable yieldVault;
 
     /// @notice Dedicated vault for isolating Systemic Risk Fees, Dev, LA2, and MVI1 payouts.
@@ -240,17 +242,17 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         emit PoolCreated(_poolId, block.timestamp);
 
         // Interactions: Securely transfer funds and mint fractional equity.
-        // 3. Pull total gross amount from sender to the Treasury Vault.
-        if (riskFee > 0) {
-            address riskPoolWallet = registry.riskPoolWallet();
-            if (riskPoolWallet == address(0)) revert LAWPComplianceEngine_InvalidActor();
+        // 3. Resolve the Operational Treasury and credit internal ledger.
+        //    A single ERC20 transfer moves the full gross amount to the Operational Vault.
+        //    The internal ledger credits risk fee and net campaign capital separately under
+        //    the same wallet so the RiskFeeAssessed event provides the complete audit trail.
+        address opTreasury = registry.operationalTreasuryWallet();
+        if (opTreasury == address(0)) revert LAWPComplianceEngine_InvalidActor();
 
-            operationalBalances[riskPoolWallet] += riskFee;
+        if (riskFee > 0) operationalBalances[opTreasury] += riskFee;
+        operationalBalances[opTreasury] += netCapital;
 
-            cNGNToken.safeTransferFrom(msg.sender, address(operationalVault), riskFee);
-        }
-
-        cNGNToken.safeTransferFrom(msg.sender, address(yieldVault), netCapital);
+        cNGNToken.safeTransferFrom(msg.sender, address(operationalVault), _grossAmount);
         emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
 
         // 4. Mint fractional shares to contributors based on net capital.

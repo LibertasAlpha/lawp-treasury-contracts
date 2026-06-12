@@ -54,9 +54,13 @@ interface ILAWPComplianceEngine {
                            CAPITAL FORMATION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Processes incoming investor capital and orchestrates physical vault drops.
-    /// @dev Pulls `_grossAmount` from msg.sender. Drops Risk Fee into Operational Vault.
-    ///      Drops `netCapital` into Yield Vault. Mints fractional ERC-721 equity.
+    /// @notice Processes incoming campaign capital and orchestrates physical vault routing.
+    /// @dev Pulls `_grossAmount` from msg.sender in a single transfer into the Operational Vault.
+    ///      Internally credits the `operationalTreasuryWallet` with both the risk fee component
+    ///      and the net campaign capital component via the pull-based `operationalBalances` ledger.
+    ///      No funds touch the Yield Vault at deposit time — the Yield Vault is funded exclusively
+    ///      by subsequent revenue routing (GRANT_INITIAL, GRANT_CONTINUOUS, RoC flows).
+    ///      Mints fractional ERC-721 equity to contributors tracking their netPrincipal shares.
     /// @param _poolId The unique deployment pool identifier.
     /// @param _grossAmount Total payment token deposited before risk fee deduction.
     /// @param _contributors Array of investor wallet addresses.

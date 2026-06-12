@@ -13,8 +13,8 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 ## Key Features
 
 - **Zero-Custody Switchboard:** The Compliance Engine holds a 0 balance, routing funds directly from the off-chain Relayer or Injector Wallet to specific vaults in a single hop.
-- **Dual-Treasury Segregation:** Pure physical separation of Investor Funds (`LAWPYieldVault`) and Operational/Payroll Funds (`LAWPOperationalVault`).
-- **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
+- **Dual-Treasury Segregation:** Pure physical separation of Campaign Capital (`LAWPOperationalVault`, funded at deposit time) and Investor Yield/RoC (`LAWPYieldVault`, funded exclusively by revenue routing).
+- **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev, Operational Treasury) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
 - **Trustless Revenue Routing:** Enforces strict mathematical splits for Initial Grants (30/50/20) and Continuous Grants (10/55/25/10) without manual intervention.
 - **Atomic Transfer Hook (Double-Spend Protection):** Forcefully flushes pending yields upon ERC-721 token transfer, ensuring secondary market buyers receive a clean state.
 - **Emergency Guardian Pattern:** The Admin Safe owner can instantly pause/unpause the system to mitigate potential exploits or systemic risks.
@@ -29,12 +29,12 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Responsibility:** Calculates proportional equity, deducts systemic risk fees, and executes mathematical routing. Updates internal accounting ledgers and instructs the movement of tokens without holding funds.
   - **Key Functions:** `processPoolDeposit()`, `routeOperationalAllocation()`, `claimYield()`, `claimOperationalFunds()`
 
-- **LAWPYieldVault (Vault A: Investor Funds)**
-  - **Responsibility:** Subordinate vault holding Net Principal, Return of Contribution (RoC), and pending Yield. Contains no public deposit functions to prevent orphaned capital.
+- **LAWPYieldVault (Vault A: Investor Yield & RoC)**
+  - **Responsibility:** Subordinate vault holding Return of Contribution (RoC) and pending Yield accumulated via revenue routing. Receives **no funds at deposit time** — it is funded exclusively by `routeOperationalAllocation` (GRANT_INITIAL, GRANT_CONTINUOUS, RoC flows). Contains no public deposit functions to prevent orphaned capital.
   - **Key Functions:** `executeTransfer()`
 
-- **LAWPOperationalVault (Vault B: Protocol Funds)**
-  - **Responsibility:** Subordinate vault holding Systemic Risk Fees, Dev splits, LA2, and MVI1 payouts. Contains no public deposit functions.
+- **LAWPOperationalVault (Vault B: Campaign Capital & Protocol Funds)**
+  - **Responsibility:** Subordinate vault receiving the **full gross deposit** on every pool deposit (risk fee + net campaign capital). Also receives operational payroll splits from revenue routing (Dev, LA2, MVI1). Contains no public deposit functions.
   - **Key Functions:** `executeTransfer()`
 
 - **LAWPImpactToken (The Equity)**
@@ -46,8 +46,8 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Key Functions:** `executeProposal()`, `getProposalDigest()`, `addSigner()`
 
 - **LAWPActorRegistry (The Directory)**
-  - **Responsibility:** Centralized registry for dynamic operational wallets (LA2, MVI1, Risk Pool, Dev Team) to allow updatability without migrating the Engine.
-  - **Key Functions:** `setLA2Wallet()`, `setMVI1Wallet()`
+  - **Responsibility:** Centralized registry for dynamic operational wallets (LA2, MVI1, Operational Treasury, Dev Team) to allow updatability without migrating the Engine.
+  - **Key Functions:** `setLA2Wallet()`, `setMVI1Wallet()`, `setOperationalTreasuryWallet()`, `setDevWallet()`
 
 ### Component Interaction Flow
 
@@ -110,7 +110,7 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Description:** The core of the O(1) Math Engine. Tracks the cumulative, all-time revenue/repayment routed to a specific `poolId` for Investors.
 
 - **operationalBalances (Mapping)**
-  - **Description:** Tracks the internal balance of specific operational wallets (e.g., LA2, Dev, Risk Pool) to facilitate pull-over-push.
+  - **Description:** Tracks the internal balance of specific operational wallets (e.g., LA2, Dev, Operational Treasury) to facilitate pull-over-push. On pool deposit, both the risk fee component and the net campaign capital component are credited to the `operationalTreasuryWallet` via this ledger.
 
 ## Invariants & Security Model
 
@@ -185,7 +185,7 @@ BOARD_SIGNER_5=0x...
 
 LA2_WALLET=0x...
 MVI1_WALLET=0x...
-RISK_POOL_WALLET=0x...
+OPERATIONAL_TREASURY_WALLET=0x...
 DEV_WALLET=0x...
 ```
 

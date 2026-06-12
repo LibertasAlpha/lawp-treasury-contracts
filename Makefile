@@ -51,12 +51,17 @@ coverage:
 
 
 # ==============================================================================
-# SIMULATIONS (Dry Runs - No actual broadcast)
-# Run these to verify gas estimations and payload correctness before deployment.
+# SIMULATIONS (Dry Runs with controlled execution model)
+
+# simulate-deploy-core uses --broadcast to ensure contracts are actually deployed and addresses persist for downstream configuration steps.
+
+# simulate-configure does NOT use --broadcast since it is intended for execution tracing and validation against already-deployed contract state.
+
+# Run these to verify execution flow, gas estimations, and payload correctness before full protocol deployment.
 # ==============================================================================
 
 simulate-deploy-core:
-	forge script script/Deploy.s.sol:DeployLAWPSystem --rpc-url $(RPC_URL) -vvvv
+	forge script script/Deploy.s.sol:DeployLAWPSystem --rpc-url $(RPC_URL) --broadcast -vvvv
 
 simulate-configure:
 	forge script script/Configure.s.sol:ConfigureLAWPSystem --rpc-url $(RPC_URL) -vvvv

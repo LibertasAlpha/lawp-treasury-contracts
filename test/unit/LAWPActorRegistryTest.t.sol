@@ -14,7 +14,7 @@ contract LAWPActorRegistryTest is Test {
     address public admin = address(1);
     address public la2 = address(10);
     address public mvi1 = address(11);
-    address public riskPool = address(12);
+    address public operationalTreasury = address(12);
     address public dev = address(13);
     address public newAdmin = address(99);
     address public nobody = address(50);
@@ -36,7 +36,7 @@ contract LAWPActorRegistryTest is Test {
     function test_Constructor_WalletsInitiallyZero() public view {
         assertEq(registry.la2Wallet(), address(0));
         assertEq(registry.mvi1Wallet(), address(0));
-        assertEq(registry.riskPoolWallet(), address(0));
+        assertEq(registry.operationalTreasuryWallet(), address(0));
         assertEq(registry.devWallet(), address(0));
     }
 
@@ -56,10 +56,10 @@ contract LAWPActorRegistryTest is Test {
         assertEq(registry.mvi1Wallet(), mvi1);
     }
 
-    function test_SetRiskPoolWallet_Success() public {
+    function test_SetOperationalTreasuryWallet_Success() public {
         vm.prank(admin);
-        registry.setRiskPoolWallet(riskPool);
-        assertEq(registry.riskPoolWallet(), riskPool);
+        registry.setOperationalTreasuryWallet(operationalTreasury);
+        assertEq(registry.operationalTreasuryWallet(), operationalTreasury);
     }
 
     function test_SetDevWallet_Success() public {
@@ -86,11 +86,11 @@ contract LAWPActorRegistryTest is Test {
         registry.setMVI1Wallet(mvi1);
     }
 
-    function test_SetRiskPoolWallet_EmitsActorUpdated() public {
+    function test_SetOperationalTreasuryWallet_EmitsActorUpdated() public {
         vm.prank(admin);
         vm.expectEmit(false, true, true, true);
-        emit ActorUpdated("RISK_POOL", address(0), riskPool);
-        registry.setRiskPoolWallet(riskPool);
+        emit ActorUpdated("OPERATIONAL_TREASURY", address(0), operationalTreasury);
+        registry.setOperationalTreasuryWallet(operationalTreasury);
     }
 
     function test_SetDevWallet_EmitsActorUpdated() public {
@@ -126,10 +126,10 @@ contract LAWPActorRegistryTest is Test {
         registry.setMVI1Wallet(address(0));
     }
 
-    function test_SetRiskPoolWallet_RevertIf_ZeroAddress() public {
+    function test_SetOperationalTreasuryWallet_RevertIf_ZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert(LAWPActorRegistry.LAWPActorRegistry_ZeroAddress.selector);
-        registry.setRiskPoolWallet(address(0));
+        registry.setOperationalTreasuryWallet(address(0));
     }
 
     function test_SetDevWallet_RevertIf_ZeroAddress() public {
@@ -154,10 +154,10 @@ contract LAWPActorRegistryTest is Test {
         registry.setMVI1Wallet(mvi1);
     }
 
-    function test_SetRiskPoolWallet_RevertIf_NotOwner() public {
+    function test_SetOperationalTreasuryWallet_RevertIf_NotOwner() public {
         vm.prank(nobody);
         vm.expectRevert();
-        registry.setRiskPoolWallet(riskPool);
+        registry.setOperationalTreasuryWallet(operationalTreasury);
     }
 
     function test_SetDevWallet_RevertIf_NotOwner() public {
@@ -206,24 +206,24 @@ contract LAWPActorRegistryTest is Test {
     function testFuzz_SetAllWallets_Success(
         address _la2,
         address _mvi1,
-        address _riskPool,
+        address _operationalTreasury,
         address _dev
     ) public {
         vm.assume(_la2 != address(0));
         vm.assume(_mvi1 != address(0));
-        vm.assume(_riskPool != address(0));
+        vm.assume(_operationalTreasury != address(0));
         vm.assume(_dev != address(0));
 
         vm.startPrank(admin);
         registry.setLA2Wallet(_la2);
         registry.setMVI1Wallet(_mvi1);
-        registry.setRiskPoolWallet(_riskPool);
+        registry.setOperationalTreasuryWallet(_operationalTreasury);
         registry.setDevWallet(_dev);
         vm.stopPrank();
 
         assertEq(registry.la2Wallet(), _la2);
         assertEq(registry.mvi1Wallet(), _mvi1);
-        assertEq(registry.riskPoolWallet(), _riskPool);
+        assertEq(registry.operationalTreasuryWallet(), _operationalTreasury);
         assertEq(registry.devWallet(), _dev);
     }
 }
