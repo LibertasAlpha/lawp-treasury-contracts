@@ -405,8 +405,129 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         vm.clearMockedCalls();
     }
 
+    function test_RouteRoC_RevertIf_ExceedsPrincipalCap() public {
+        // Standard deposit: gross=100_000e6, risk=10%, net=90_000e6 -> poolTotalPrincipal=90_000e6
+        _setupStandardDeposit();
+
+        // Route exactly the net capital - should succeed.
+        _setupRoC(90_000e6);
+
+        // Attempt to route even 1 wei more - pool is fully settled.
+        vm.prank(coordinator);
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ExceedsPrincipalCap.selector);
+        mockMultiSig.execute(1, 1, LAWPStructs.FlowType.RoC);
+    }
+
+    function test_RouteRoC_PartialThenRemainder_BothSucceed() public {
+        _setupStandardDeposit();
+        uint256 net = 90_000e6;
+
+        // First partial routing
+        _setupRoC(50_000e6);
+        assertEq(engine.poolRocTracker(1), 50_000e6);
+
+        // Second routing for the exact remainder
+        _setupRoC(net - 50_000e6);
+        assertEq(engine.poolRocTracker(1), net);
+    }
+
+    function test_RouteRoC_OverpayByOne_Reverts() public {
+        _setupStandardDeposit();
+        uint256 net = 90_000e6;
+
+        // Route net - 1 first, leaving 1 wei of capacity.
+        _setupRoC(net - 1);
+
+        // Route 2 wei: exceeds remaining capacity of 1 wei.
+        vm.prank(coordinator);
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ExceedsPrincipalCap.selector);
+        mockMultiSig.execute(1, 2, LAWPStructs.FlowType.RoC);
+    }
+
+    function test_ProcessPoolDeposit_WritesPoolTotalPrincipal() public {
+        uint256 gross = 100_000e6;
+        uint256 expectedNet = 90_000e6; // 10% risk fee
+        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        vm.prank(coordinator);
+        engine.processPoolDeposit(1, gross, c, b);
+        assertEq(engine.poolTotalPrincipal(1), expectedNet);
+    }
+
     /*//////////////////////////////////////////////////////////////
-                         CLAIM YIELD TESTS
+                       OPERATOR VIEW HELPER TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetPoolNetCapital_ReturnsNetAfterFee() public {
+        _setupStandardDeposit(); // gross=100_000e6, net=90_000e6
+        assertEq(engine.getPoolNetCapital(1), 90_000e6);
+    }
+
+    function test_GetPoolNetCapital_RevertIf_InvalidPool() public {
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidPool.selector);
+        engine.getPoolNetCapital(99);
+    }
+
+    function test_GetRemainingRocCapacity_InitiallyEqualsNetCapital() public {
+        _setupStandardDeposit();
+        assertEq(engine.getRemainingRocCapacity(1), 90_000e6);
+    }
+
+    function test_GetRemainingRocCapacity_DecreasesAfterRouting() public {
+        _setupStandardDeposit();
+        _setupRoC(30_000e6);
+        assertEq(engine.getRemainingRocCapacity(1), 60_000e6);
+    }
+
+    function test_GetRemainingRocCapacity_ZeroWhenSettled() public {
+        _setupStandardDeposit();
+        _setupRoC(90_000e6);
+        assertEq(engine.getRemainingRocCapacity(1), 0);
+    }
+
+    function test_GetRemainingRocCapacity_RevertIf_InvalidPool() public {
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidPool.selector);
+        engine.getRemainingRocCapacity(99);
+    }
+
+    function test_GetPoolRocStatus_InitialState() public {
+        _setupStandardDeposit();
+        (uint256 netCapital, uint256 routedRoc, uint256 remainingRoc, bool settled) =
+            engine.getPoolRocStatus(1);
+        assertEq(netCapital, 90_000e6);
+        assertEq(routedRoc, 0);
+        assertEq(remainingRoc, 90_000e6);
+        assertFalse(settled);
+    }
+
+    function test_GetPoolRocStatus_PartialRouting() public {
+        _setupStandardDeposit();
+        _setupRoC(65_000e6);
+        (uint256 netCapital, uint256 routedRoc, uint256 remainingRoc, bool settled) =
+            engine.getPoolRocStatus(1);
+        assertEq(netCapital, 90_000e6);
+        assertEq(routedRoc, 65_000e6);
+        assertEq(remainingRoc, 25_000e6);
+        assertFalse(settled);
+    }
+
+    function test_GetPoolRocStatus_FullySettled() public {
+        _setupStandardDeposit();
+        _setupRoC(90_000e6);
+        (uint256 netCapital, uint256 routedRoc, uint256 remainingRoc, bool settled) =
+            engine.getPoolRocStatus(1);
+        assertEq(netCapital, 90_000e6);
+        assertEq(routedRoc, 90_000e6);
+        assertEq(remainingRoc, 0);
+        assertTrue(settled);
+    }
+
+    function test_GetPoolRocStatus_RevertIf_InvalidPool() public {
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidPool.selector);
+        engine.getPoolRocStatus(99);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          CLAIM YIELD TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_ClaimYield_Success() public {
@@ -427,9 +548,18 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     }
 
     function test_ClaimYield_RoC_CappedAtPrincipal() public {
-        _setupStandardDeposit(); // userA token 1: principal = 54_000e6
-        // Route 200_000e6 RoC -> userA's 60% share = 120_000e6, capped at 54_000e6
-        _setupRoC(200_000e6);
+        // Standard deposit: gross=100_000e6, risk=10%, net=90_000e6.
+        // userA token 1: BPS=6000, netPrincipal=54_000e6
+        // userB token 2: BPS=4000, netPrincipal=36_000e6
+        _setupStandardDeposit();
+
+        // Route the full net capital as RoC - maximum allowed by the guard.
+        // poolRocTracker = 90_000e6
+        // userA's tracker share = 90_000e6 * 6000 / 10_000 = 54_000e6
+        // maxRemainingRoc for userA = netPrincipal - rocReturned = 54_000e6 - 0 = 54_000e6
+        // claimableRoc = min(54_000e6, 54_000e6) = 54_000e6
+        // This proves the claim-math cap is reached exactly at the principal boundary.
+        _setupRoC(90_000e6);
 
         assertEq(engine.calculateProportionalYield(1), 54_000e6);
 
@@ -437,7 +567,8 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         engine.claimYield(1);
 
         assertEq(impactToken.getTokenData(1).rocReturned, 54_000e6);
-        // Second claim must return nothing
+
+        // Second claim: rocReturned == netPrincipal, so claimableRoc = 0. Nothing left.
         vm.prank(userA);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_NothingToClaim.selector);
         engine.claimYield(1);

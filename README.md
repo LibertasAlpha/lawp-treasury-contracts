@@ -30,7 +30,7 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Key Functions:** `processPoolDeposit()`, `routeOperationalAllocation()`, `claimYield()`, `claimOperationalFunds()`
 
 - **LAWPYieldVault (Vault A: Investor Yield & RoC)**
-  - **Responsibility:** Subordinate vault holding Return of Contribution (RoC) and pending Yield accumulated via revenue routing. Receives **no funds at deposit time** — it is funded exclusively by `routeOperationalAllocation` (GRANT_INITIAL, GRANT_CONTINUOUS, RoC flows). Contains no public deposit functions to prevent orphaned capital.
+  - **Responsibility:** Subordinate vault holding Return of Contribution (RoC) and pending Yield accumulated via revenue routing. Receives **no funds at deposit time** - it is funded exclusively by `routeOperationalAllocation` (GRANT_INITIAL, GRANT_CONTINUOUS, RoC flows). Contains no public deposit functions to prevent orphaned capital.
   - **Key Functions:** `executeTransfer()`
 
 - **LAWPOperationalVault (Vault B: Campaign Capital & Protocol Funds)**
@@ -107,22 +107,27 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Fields:** `uint96 totalRevenue`, `FlowType flowType`, `bool executed`, `uint40 submittedAt`
 
 - **poolYieldTracker & poolRocTracker (Mappings)**
-  - **Description:** The core of the O(1) Math Engine. Tracks the cumulative, all-time revenue/repayment routed to a specific `poolId` for Investors.
+  - **Description:** The core of the O(1) Math Engine. Tracks the cumulative, all-time Continuous Yield and Return of Contribution routed to a specific `poolId`. Used by `calculateProportionalYield` for gas-efficient pro-rata claim math without iteration.
+
+- **poolTotalPrincipal (Mapping)**
+  - **Description:** Records the total net campaign capital committed to a pool at deposit time (`grossAmount - riskFee`). Written once and never mutated. Serves as the hard protocol ceiling for cumulative RoC routing: `routeOperationalAllocation` will revert with `ExceedsPrincipalCap` if a RoC call would cause `poolRocTracker` to exceed this value, preventing funds from landing in the Yield Vault in an unclaimable state. Exposed to executors via `getPoolRocStatus()` and `getRemainingRocCapacity()` to avoid off-chain calculation.
 
 - **operationalBalances (Mapping)**
-  - **Description:** Tracks the internal balance of specific operational wallets (e.g., LA2, Dev, Operational Treasury) to facilitate pull-over-push. On pool deposit, both the risk fee component and the net campaign capital component are credited to the `operationalTreasuryWallet` via this ledger.
+  - **Description:** Pull-based ledger tracking claimable balances for operational actors (LA2, MVI1, Dev, Operational Treasury). On pool deposit, both the risk fee component and the net campaign capital component are credited to the `operationalTreasuryWallet`. On revenue routing (GRANT_INITIAL, GRANT_CONTINUOUS), LA2, MVI1, and Dev splits are credited here. Actors claim via `claimOperationalFunds()`.
 
 ## Invariants & Security Model
 
-The protocol is mathematically secured by a Stateful Invariant Fuzzing suite (`LAWPInvariants.t.sol`) tested tested across 25,000 invariant runs with 250-depth state exploration and 10,000 fuzzing iterations.
+The protocol is mathematically secured by a Stateful Invariant Fuzzing suite (`LAWPInvariants.t.sol`) tested across 25,000 invariant runs with 250-depth state exploration and 10,000 fuzzing iterations.
 
-- **Invariant A (RoC Ceiling):** A user's `rocReturned` can never exceed their `netPrincipal`.
-- **Invariant B (Solvency Law):** The Vault balances will always equal or exceed the total outstanding un-claimed yield + total remaining RoC buffers.
-- **Invariant C (Dust Conservation):** Fractional math must never leak a single wei. `Sum(netPrincipal) == GrossDeposit - RiskFee`.
-- **Invariant D (The Transfer Hook):** Receiver's pending yield MUST evaluate to exactly 0 immediately post-transfer. Yield is not duplicated.
+- **Invariant A (Per-Token RoC Ceiling):** A token's `rocReturned` can never exceed its `netPrincipal`. Enforced by the claim-math hard cap.
+- **Invariant B (YieldVault Solvency):** The YieldVault balance must always equal or exceed total outstanding unclaimed investor obligations (yield + RoC routed minus claimed).
+- **Invariant C (Dust Conservation):** Fractional arithmetic must never leak a single wei. `Sum(netPrincipal)` per pool must equal exactly `grossDeposit - riskFee`.
+- **Invariant D (The Transfer Hook):** A receiver's pending yield must evaluate to exactly 0 immediately post-transfer. Yield is never duplicated across secondary market trades.
+- **Invariant J (OperationalVault Solvency):** The OperationalVault balance must always be >= the sum of all unclaimed `operationalBalances` ledger entries.
+- **Invariant N (Pool-Level RoC Ceiling):** For every pool, `poolRocTracker` can never exceed `poolTotalPrincipal`. Enforced at the routing layer by `ExceedsPrincipalCap` guard and continuously verified by the invariant fuzzer.
 - **No Orphaned Capital:** Vaults lack public `deposit()` functions. All funds must pass through the Engine to be registered on an internal ledger.
 - **Single-Asset Invariant:** The settlement token (cNGN) is `immutable`. All vault balances and cumulative accounting trackers are permanently denominated in this token, eliminating asset-accounting drift.
-- **Vault Segregation:** `LAWPYieldVault` balance MUST always be >= Unclaimed Investor Liabilities. `LAWPOperationalVault` balance MUST always be >= Unclaimed Operational Liabilities.
+- **Vault Segregation:** `LAWPOperationalVault` receives all deposit capital. `LAWPYieldVault` is funded exclusively by revenue routing and must always be >= unclaimed investor yield and RoC liabilities.
 
 ### Failure Conditions
 

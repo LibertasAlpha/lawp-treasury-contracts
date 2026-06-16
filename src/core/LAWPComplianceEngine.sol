@@ -49,6 +49,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     error LAWPComplianceEngine_NoOperationalFunds();
     error LAWPComplianceEngine_UnauthorizedInjector(address fundProvider);
     error LAWPComplianceEngine_ZeroAddressInjector();
+    error LAWPComplianceEngine_InvalidPool();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -94,6 +95,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
     /// @notice Tracks the cumulative Return of Contribution (RoC) routed to a specific poolId. Updated during revenue routing.
     mapping(uint256 poolId => uint256 cumulativeRoc) public poolRocTracker;
+
+    /// @notice Records the total net campaign capital committed to a pool at deposit time.
+    ///         Written once during `processPoolDeposit` and never mutated thereafter.
+    ///         Used as the hard upper bound for cumulative RoC routing - ensures
+    ///         Σ(RoC routed) ≤ poolTotalPrincipal, preventing stranded funds in the Yield Vault.
+    mapping(uint256 poolId => uint256 principal) public poolTotalPrincipal;
 
     /// @notice Tracks the total yield already claimed by a specific tokenId to ensure accurate O(1) pro-rata math.
     mapping(uint256 tokenId => uint256 claimedAmount) public yieldClaimed;
@@ -252,6 +259,11 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         if (riskFee > 0) operationalBalances[opTreasury] += riskFee;
         operationalBalances[opTreasury] += netCapital;
 
+        // Record net capital as the immutable RoC ceiling for this pool.
+        // Written once here; never mutated. Enforced during RoC routing to prevent
+        // over-routing funds that can never be claimed.
+        poolTotalPrincipal[_poolId] = netCapital;
+
         cNGNToken.safeTransferFrom(msg.sender, address(operationalVault), _grossAmount);
         emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
 
@@ -277,6 +289,14 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         }
 
         if (_flowType == LAWPStructs.FlowType.RoC) {
+            // Guard: cumulative RoC routed to a pool can never exceed its total net principal.
+            // Prevents funds from landing in the Yield Vault in a state where they can
+            // never be claimed (every token's maxRemainingRoc would already be 0).
+            uint256 rocCap = poolTotalPrincipal[_poolId];
+            if (poolRocTracker[_poolId] + _totalAmount > rocCap) {
+                revert LAWPComplianceEngine_ExceedsPrincipalCap();
+            }
+
             // 100% of this specific routed amount is assigned to the Return of Contribution tracker
             poolRocTracker[_poolId] += _totalAmount;
 
@@ -549,5 +569,36 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
                 ++i;
             }
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         OPERATOR VIEW HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc ILAWPComplianceEngine
+    function getPoolNetCapital(uint256 _poolId) external view returns (uint256) {
+        if (!pools[_poolId].exists) revert LAWPComplianceEngine_InvalidPool();
+        return poolTotalPrincipal[_poolId];
+    }
+
+    /// @inheritdoc ILAWPComplianceEngine
+    function getRemainingRocCapacity(uint256 _poolId) external view returns (uint256) {
+        if (!pools[_poolId].exists) revert LAWPComplianceEngine_InvalidPool();
+        uint256 principal = poolTotalPrincipal[_poolId];
+        uint256 routed = poolRocTracker[_poolId];
+        return routed >= principal ? 0 : principal - routed;
+    }
+
+    /// @inheritdoc ILAWPComplianceEngine
+    function getPoolRocStatus(uint256 _poolId)
+        external
+        view
+        returns (uint256 netCapital, uint256 routedRoc, uint256 remainingRoc, bool settled)
+    {
+        if (!pools[_poolId].exists) revert LAWPComplianceEngine_InvalidPool();
+        netCapital = poolTotalPrincipal[_poolId];
+        routedRoc = poolRocTracker[_poolId];
+        remainingRoc = routedRoc >= netCapital ? 0 : netCapital - routedRoc;
+        settled = remainingRoc == 0;
     }
 }

@@ -197,8 +197,8 @@ contract LAWPHandler is Test {
     ///        - Transfers netCapital (grossAmount - riskFee) -> yieldVault
     ///        - Mints one ERC-721 token per contributor
     ///
-    ///      NOTE: The riskFee goes to opVault and netCapital goes to yieldVault.
-    ///      Total cNGN pulled from the relayer = grossAmount (riskFee + netCapital).
+    ///      NOTE: The full gross amount goes to opVault in a single transfer.
+    ///      Total cNGN pulled from the relayer = grossAmount (risk fee + net capital).
     ///
     /// @dev GHOST UPDATES:
     ///      Records gross, net, and vault inflows for Conservation Invariant M.
@@ -317,7 +317,15 @@ contract LAWPHandler is Test {
         ghost_prevPoolYieldTracker[poolId] = engine.poolYieldTracker(poolId);
         ghost_prevPoolRocTracker[poolId] = engine.poolRocTracker(poolId);
 
-        // 3. Execute via MockMultiSig (pass-through only)
+        // 3. For RoC, clamp amount to remaining capacity so we never trigger ExceedsPrincipalCap.
+        //    This keeps the fuzzer exploring valid RoC sequences instead of constant reverts.
+        if (flow == LAWPStructs.FlowType.RoC) {
+            uint256 remaining = engine.getRemainingRocCapacity(poolId);
+            if (remaining == 0) return; // Pool fully RoC-settled; skip silently.
+            if (amount > remaining) amount = remaining;
+        }
+
+        // 4. Execute via MockMultiSig (pass-through only)
         // relayer becomes msg.sender inside multiSig.execute(),
         // so the engine receives _fundProvider = relayer.
         vm.prank(relayer);
@@ -369,6 +377,14 @@ contract LAWPHandler is Test {
             cngn.balanceOf(address(engine)),
             0,
             "Handler routeRevenue: Engine holds cNGN (custody violation)"
+        );
+
+        // 7. Micro-invariant N: RoC ceiling never exceeded.
+        //    Belt-and-suspenders local check to catch any bypass of the guard.
+        assertLe(
+            engine.poolRocTracker(poolId),
+            engine.poolTotalPrincipal(poolId),
+            "Handler routeRevenue: poolRocTracker exceeds poolTotalPrincipal (Invariant N)"
         );
     }
 

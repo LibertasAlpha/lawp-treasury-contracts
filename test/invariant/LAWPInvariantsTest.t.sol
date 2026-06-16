@@ -396,6 +396,34 @@ contract LAWPInvariantsTest is Test {
         );
     }
 
+    // INVARIANT N: RoC Ceiling
+    /// @notice For every active pool, cumulative RoC routed via `routeOperationalAllocation`
+    ///         must never exceed the pool's total net principal recorded at deposit time.
+    ///
+    /// @dev WHY IT MATTERS:
+    ///      The per-token claim math caps each individual payout at `netPrincipal - rocReturned`,
+    ///      but this does NOT prevent the routing layer from depositing more than the total
+    ///      principal into the Yield Vault. Any excess RoC sits in the Yield Vault permanently
+    ///      unreachable: every token's `maxRemainingRoc` is already 0, so `claimableRoc = 0`
+    ///      for every future claim. The `ExceedsPrincipalCap` guard in `routeOperationalAllocation`
+    ///      prevents this; this invariant is the global continuous proof that the guard works.
+    ///
+    ///      ECONOMIC MODEL:
+    ///        Σ(RoC routed to pool) ≤ poolTotalPrincipal[poolId]
+    ///        poolTotalPrincipal[poolId] = netCapital at deposit time (gross - riskFee)
+    function invariant_N_RocCeiling() public view {
+        uint256 len = handler.activePoolsLength();
+
+        for (uint256 i = 0; i < len; i++) {
+            uint256 poolId = handler.activePools(i);
+            assertLe(
+                engine.poolRocTracker(poolId),
+                engine.poolTotalPrincipal(poolId),
+                "Invariant N: poolRocTracker exceeds poolTotalPrincipal - RoC over-routing detected"
+            );
+        }
+    }
+
     // INVARIANT K: Accumulator Monotonicity
     /// @notice The poolYieldTracker and poolRocTracker can only ever increase.
     ///         They must never decrease between any two consecutive states.
