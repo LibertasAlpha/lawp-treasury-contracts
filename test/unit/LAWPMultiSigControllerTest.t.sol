@@ -364,7 +364,7 @@ contract LAWPMultiSigControllerTest is LAWPTestBase {
         bytes memory sigs = _buildSignatures(digest, sortedPks);
 
         vm.prank(relayer);
-        vm.expectRevert(LAWPMultiSigController.LAWPMultiSigController_NotASigner.selector);
+        vm.expectRevert(LAWPMultiSigController.LAWPMultiSigController_InvalidSignatures.selector);
         controller.executeProposal(1, 1, amount, LAWPStructs.FlowType.RoC, deadline, sigs);
     }
 

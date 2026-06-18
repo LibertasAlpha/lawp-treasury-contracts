@@ -277,8 +277,9 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
             // This is a deliberate design choice to minimize complexity and attack surfaces.
             // The `ecrecover` function returns the address that signed the message. If the signature is invalid, it returns address(0).
             address currentSigner = ecrecover(digest, v, r, s);
-            if (currentSigner == address(0)) revert LAWPMultiSigController_InvalidSignatures();
-            if (!isSigner[currentSigner]) revert LAWPMultiSigController_NotASigner();
+            if (currentSigner == address(0) || !isSigner[currentSigner]) {
+                revert LAWPMultiSigController_InvalidSignatures();
+            }
 
             // CRITICAL ANTI-DOS & ANTI-DUPLICATE CHECK:
             // Signatures MUST be submitted in ascending order based on the signer's Ethereum address.
