@@ -50,6 +50,10 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     error LAWPComplianceEngine_UnauthorizedInjector(address fundProvider);
     error LAWPComplianceEngine_ZeroAddressInjector();
     error LAWPComplianceEngine_InvalidPool();
+    /// @notice Reverts when a transfer arrives with zero net tokens despite a non-zero request.
+    ///         Indicates a 100% fee-on-transfer token or a rebasing token that zeroed the balance.
+    ///         Accounting with zero actualReceived would silently corrupt pool state.
+    error LAWPComplianceEngine_ZeroActualReceived();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -221,6 +225,18 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
+    /// @dev BALANCE-DELTA ACCOUNTING: All downstream state is derived from the actual tokens
+    ///      received in the Operational Vault (measured via pre/post balance snapshot), NOT from
+    ///      the caller-supplied `_grossAmount`. This guards against fee-on-transfer tokens,
+    ///      upgradeable tokens introducing transfer taxes, and any token that delivers fewer
+    ///      tokens than requested.
+    ///
+    ///      CEI NOTE: Pool registration (Effects) occurs before the ERC20 transfer (Interaction)
+    ///      to preserve replay protection. The pool guard (`pools[_poolId].exists`) and
+    ///      `nonReentrant` together eliminate any reentrancy window opened by this ordering.
+    ///      Ledger credits (operationalBalances, poolTotalPrincipal) are written AFTER the
+    ///      transfer so they reflect the actual amount; this is safe because the pool is already
+    ///      locked before the first external call.
     function processPoolDeposit(
         uint256 _poolId,
         uint256 _grossAmount,
@@ -233,7 +249,6 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         uint256 contributorsLength = _contributors.length;
         if (contributorsLength > MAX_CONTRIBUTORS) revert LAWPComplianceEngine_ArrayTooLarge();
-
         if (contributorsLength == 0 || contributorsLength != _bpsShares.length) {
             revert LAWPComplianceEngine_ArrayMismatch();
         }
@@ -241,36 +256,45 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         // 1. Verify exact 100% allocation across all contributors.
         _validateBPS(_bpsShares, contributorsLength);
 
-        // Effects: Compute state, register the pool, and emit localized events before external calls.
-        // 2. Math & Fee Deduction
-        (uint256 riskFee, uint256 netCapital) = _computeFees(_grossAmount);
-
-        pools[_poolId] = Pool({ exists: true, createdAt: block.timestamp });
-        emit PoolCreated(_poolId, block.timestamp);
-
-        // Interactions: Securely transfer funds and mint fractional equity.
-        // 3. Resolve the Operational Treasury and credit internal ledger.
-        //    A single ERC20 transfer moves the full gross amount to the Operational Vault.
-        //    The internal ledger credits risk fee and net campaign capital separately under
-        //    the same wallet so the RiskFeeAssessed event provides the complete audit trail.
+        // 2. Resolve the Operational Treasury address before any state mutation.
         address opTreasury = registry.operationalTreasuryWallet();
         if (opTreasury == address(0)) revert LAWPComplianceEngine_InvalidActor();
 
+        // Effects (partial): register pool to lock replay before Interaction
+        pools[_poolId] = Pool({ exists: true, createdAt: block.timestamp });
+        emit PoolCreated(_poolId, block.timestamp);
+
+        // Interaction: execute the ERC20 transfer with balance-delta measurement
+        // 3. Snapshot the vault balance BEFORE the transfer.
+        uint256 balBefore = cNGNToken.balanceOf(address(operationalVault));
+
+        cNGNToken.safeTransferFrom(msg.sender, address(operationalVault), _grossAmount);
+
+        // 4. Measure what actually landed in the vault.
+        //    This is the canonical amount for ALL downstream accounting.
+        //    If cNGN ever gains a transfer fee (proxy upgrade), this captures the true net.
+        uint256 actualReceived = cNGNToken.balanceOf(address(operationalVault)) - balBefore;
+        if (actualReceived == 0) revert LAWPComplianceEngine_ZeroActualReceived();
+
+        // Effects (remainder): derive every ledger entry from actualReceived
+        // 5. Compute protocol fee and net campaign capital from the actual deposit.
+        (uint256 riskFee, uint256 netCapital) = _computeFees(actualReceived);
+
+        // 6. Credit the internal pull-ledger for the Operational Treasury.
+        //    riskFee + netCapital always reconstructs to actualReceived (no wei lost).
         if (riskFee > 0) operationalBalances[opTreasury] += riskFee;
         operationalBalances[opTreasury] += netCapital;
 
-        // Record net capital as the immutable RoC ceiling for this pool.
-        // Written once here; never mutated. Enforced during RoC routing to prevent
-        // over-routing funds that can never be claimed.
+        // 7. Write the immutable RoC ceiling for this pool.
+        //    Written once; enforced during RoC routing to prevent over-routing.
         poolTotalPrincipal[_poolId] = netCapital;
 
-        cNGNToken.safeTransferFrom(msg.sender, address(operationalVault), _grossAmount);
-        emit RiskFeeAssessed(_poolId, _grossAmount, riskFee, netCapital);
+        emit RiskFeeAssessed(_poolId, actualReceived, riskFee, netCapital);
 
-        // 4. Mint fractional shares to contributors based on net capital.
+        // 8. Mint fractional shares to contributors based on actual net capital.
         _mintContributorShares(_poolId, netCapital, _contributors, _bpsShares, contributorsLength);
 
-        emit CapitalPooled(_poolId, _grossAmount, riskFee);
+        emit CapitalPooled(_poolId, actualReceived, riskFee);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -278,6 +302,18 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
+    /// @dev BALANCE-DELTA ACCOUNTING: Every ledger entry (poolRocTracker, poolYieldTracker,
+    ///      operationalBalances) is derived from actual tokens received in each vault, measured
+    ///      via pre/post balance snapshots around each safeTransferFrom call.
+    ///
+    ///      For GRANT_INITIAL and GRANT_CONTINUOUS the two-vault split pattern means two
+    ///      independent snapshots are taken - one per vault. The operational sub-allocations
+    ///      (la2, mvi, dev) are then pro-rated from `actualOpReceived` using the original BPS
+    ///      ratios, preserving relative proportionality even if a transfer tax applies.
+    ///
+    ///      RoC cap pre-check: the guard uses the caller-supplied `_totalAmount` as a
+    ///      conservative request-level ceiling. Actual tracking uses `actualRocReceived`,
+    ///      which is always ≤ `_totalAmount`, so the cap invariant is never violated.
     function routeOperationalAllocation(
         uint256 _poolId,
         uint256 _totalAmount,
@@ -289,65 +325,17 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         }
 
         if (_flowType == LAWPStructs.FlowType.RoC) {
-            // Guard: cumulative RoC routed to a pool can never exceed its total net principal.
-            // Prevents funds from landing in the Yield Vault in a state where they can
-            // never be claimed (every token's maxRemainingRoc would already be 0).
-            uint256 rocCap = poolTotalPrincipal[_poolId];
-            if (poolRocTracker[_poolId] + _totalAmount > rocCap) {
-                revert LAWPComplianceEngine_ExceedsPrincipalCap();
-            }
-
-            // 100% of this specific routed amount is assigned to the Return of Contribution tracker
-            poolRocTracker[_poolId] += _totalAmount;
-
-            cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), _totalAmount);
+            _routeRoC(_poolId, _totalAmount, _fundProvider);
         } else if (_flowType == LAWPStructs.FlowType.GRANT_INITIAL) {
-            address la2 = registry.la2Wallet();
-            address mvi = registry.mvi1Wallet();
-            if (la2 == address(0) || mvi == address(0)) revert LAWPComplianceEngine_InvalidActor();
-
-            // System 1: 30% Collective, 50% LA2, 20% MVI1
-            uint256 la2Split = (_totalAmount * 5000) / TOTAL_BPS;
-            uint256 colSplit = (_totalAmount * 3000) / TOTAL_BPS;
-            uint256 mviSplit = _totalAmount - la2Split - colSplit;
-
-            poolYieldTracker[_poolId] += colSplit;
-            operationalBalances[la2] += la2Split;
-            operationalBalances[mvi] += mviSplit;
-
-            // Physical Switchboard routing
-            cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
-            cNGNToken.safeTransferFrom(
-                _fundProvider, address(operationalVault), la2Split + mviSplit
-            );
+            _routeGrantInitial(_totalAmount, _fundProvider, _poolId);
         } else if (_flowType == LAWPStructs.FlowType.GRANT_CONTINUOUS) {
-            address la2 = registry.la2Wallet();
-            address mvi = registry.mvi1Wallet();
-            address devWallet = registry.devWallet();
-            if (la2 == address(0) || mvi == address(0) || devWallet == address(0)) {
-                revert LAWPComplianceEngine_InvalidActor();
-            }
-
-            // System 2: 10% Collective, 55% LA2, 25% MVI1, 10% Dev
-            uint256 la2Split = (_totalAmount * 5500) / TOTAL_BPS;
-            uint256 mviSplit = (_totalAmount * 2500) / TOTAL_BPS;
-            uint256 colSplit = (_totalAmount * 1000) / TOTAL_BPS;
-            uint256 devSplit = _totalAmount - la2Split - mviSplit - colSplit;
-
-            poolYieldTracker[_poolId] += colSplit;
-            operationalBalances[la2] += la2Split;
-            operationalBalances[mvi] += mviSplit;
-            operationalBalances[devWallet] += devSplit;
-
-            // Physical Switchboard routing
-            cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
-            cNGNToken.safeTransferFrom(
-                _fundProvider, address(operationalVault), la2Split + mviSplit + devSplit
-            );
+            _routeGrantContinuous(_totalAmount, _fundProvider, _poolId);
         } else {
             revert LAWPComplianceEngine_InvalidFlowType();
         }
 
+        // Event emits the originally requested _totalAmount for indexer traceability.
+        // The actual received amounts are captured on-chain via ledger state changes.
         emit OperationalAllocationRouted(_poolId, _flowType, _totalAmount);
     }
 
@@ -409,6 +397,111 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         // Single aggregated external transfer to optimize gas
         yieldVault.executeTransfer(msg.sender, aggregateClaim);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                               PRIVATE HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _routeRoC(uint256 _poolId, uint256 _totalAmount, address _fundProvider) private {
+        // Conservative cap pre-check on the requested amount.
+        // Actual tracking (below) uses actualRocReceived which is always ≤ _totalAmount.
+        uint256 rocCap = poolTotalPrincipal[_poolId];
+        if (poolRocTracker[_poolId] + _totalAmount > rocCap) {
+            revert LAWPComplianceEngine_ExceedsPrincipalCap();
+        }
+
+        // Balance-delta: snapshot -> transfer -> measure.
+        uint256 yieldBalBefore = cNGNToken.balanceOf(address(yieldVault));
+        cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), _totalAmount);
+        uint256 actualRocReceived = cNGNToken.balanceOf(address(yieldVault)) - yieldBalBefore;
+        if (actualRocReceived == 0) revert LAWPComplianceEngine_ZeroActualReceived();
+
+        // Track actual routed RoC, not requested amount.
+        poolRocTracker[_poolId] += actualRocReceived;
+    }
+
+    function _routeGrantInitial(uint256 _totalAmount, address _fundProvider, uint256 _poolId)
+        private
+    {
+        address la2 = registry.la2Wallet();
+        address mvi = registry.mvi1Wallet();
+        if (la2 == address(0) || mvi == address(0)) revert LAWPComplianceEngine_InvalidActor();
+
+        // System 1 target splits from requested amount (used only for transfer sizing):
+        // 30% Collective -> YieldVault, 50% LA2 + 20% MVI1 -> OperationalVault
+        uint256 la2Split = (_totalAmount * 5000) / TOTAL_BPS;
+        uint256 colSplit = (_totalAmount * 3000) / TOTAL_BPS;
+        uint256 mviSplit = _totalAmount - la2Split - colSplit;
+
+        // Transfer 1: Collective share -> YieldVault.
+        uint256 yieldBalBefore = cNGNToken.balanceOf(address(yieldVault));
+        cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
+        uint256 actualColReceived = cNGNToken.balanceOf(address(yieldVault)) - yieldBalBefore;
+        if (actualColReceived == 0) revert LAWPComplianceEngine_ZeroActualReceived();
+
+        // Transfer 2: LA2 + MVI1 combined -> OperationalVault.
+        uint256 opBalBefore = cNGNToken.balanceOf(address(operationalVault));
+        cNGNToken.safeTransferFrom(_fundProvider, address(operationalVault), la2Split + mviSplit);
+        uint256 actualOpReceived = cNGNToken.balanceOf(address(operationalVault)) - opBalBefore;
+        if (actualOpReceived == 0) revert LAWPComplianceEngine_ZeroActualReceived();
+
+        // Pro-rate la2 and mvi from actualOpReceived using original 5000:2000 ratio.
+        // This preserves relative allocation even if a transfer tax reduces the total.
+        // Rounding dust flows to mvi (last assignment absorbs remainder).
+        uint256 actualLa2 = (actualOpReceived * 5000) / 7000;
+        uint256 actualMvi = actualOpReceived - actualLa2;
+
+        // Credit internal ledger from actual amounts.
+        poolYieldTracker[_poolId] += actualColReceived;
+        operationalBalances[la2] += actualLa2;
+        operationalBalances[mvi] += actualMvi;
+    }
+
+    function _routeGrantContinuous(uint256 _totalAmount, address _fundProvider, uint256 _poolId)
+        private
+    {
+        address la2 = registry.la2Wallet();
+        address mvi = registry.mvi1Wallet();
+        address devWallet = registry.devWallet();
+        if (la2 == address(0) || mvi == address(0) || devWallet == address(0)) {
+            revert LAWPComplianceEngine_InvalidActor();
+        }
+
+        // // System 2 target splits from requested amount (used only for transfer sizing):
+        // // 10% Collective -> YieldVault, 55% LA2 + 25% MVI1 + 10% Dev -> OperationalVault
+        // uint256 la2Split = (_totalAmount * 5500) / TOTAL_BPS;
+        // uint256 mviSplit = (_totalAmount * 2500) / TOTAL_BPS;
+        // uint256 colSplit = (_totalAmount * 1000) / TOTAL_BPS;
+        // uint256 devSplit = _totalAmount - la2Split - mviSplit - colSplit;
+
+        uint256 colSplit = (_totalAmount * 1000) / TOTAL_BPS;
+        uint256 opTransferAmount = _totalAmount - colSplit;
+
+        // Transfer 1: Collective share -> YieldVault.
+        uint256 yieldBalBefore = cNGNToken.balanceOf(address(yieldVault));
+        cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), colSplit);
+        uint256 actualColReceived = cNGNToken.balanceOf(address(yieldVault)) - yieldBalBefore;
+        if (actualColReceived == 0) revert LAWPComplianceEngine_ZeroActualReceived();
+
+        // Transfer 2: LA2 + MVI1 + Dev combined -> OperationalVault.
+        uint256 opBalBefore = cNGNToken.balanceOf(address(operationalVault));
+        cNGNToken.safeTransferFrom(_fundProvider, address(operationalVault), opTransferAmount);
+        uint256 actualOpReceived = cNGNToken.balanceOf(address(operationalVault)) - opBalBefore;
+        if (actualOpReceived == 0) revert LAWPComplianceEngine_ZeroActualReceived();
+
+        // Pro-rate operational sub-allocations from actualOpReceived.
+        // Original operational bucket: la2=5500, mvi=2500, dev=1000 (total=9000 BPS).
+        // Rounding dust flows to devWallet (last assignment absorbs remainder).
+        uint256 actualLa2 = (actualOpReceived * 5500) / 9000;
+        uint256 actualMvi = (actualOpReceived * 2500) / 9000;
+        uint256 actualDev = actualOpReceived - actualLa2 - actualMvi;
+
+        // Credit internal ledger from actual amounts.
+        poolYieldTracker[_poolId] += actualColReceived;
+        operationalBalances[la2] += actualLa2;
+        operationalBalances[mvi] += actualMvi;
+        operationalBalances[devWallet] += actualDev;
     }
 
     /*//////////////////////////////////////////////////////////////

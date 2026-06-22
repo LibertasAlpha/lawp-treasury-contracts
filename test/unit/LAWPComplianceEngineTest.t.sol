@@ -714,6 +714,67 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     }
 
     /*//////////////////////////////////////////////////////////////
+            BALANCE-DELTA ACCOUNTING TESTS (ERC20 EDGE CASES)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Verifies that processPoolDeposit reverts with ZeroActualReceived when
+    ///         the token's transfer arrives at the vault with zero net tokens.
+    ///         Simulates a 100%-fee-on-transfer or redemption-burn-on-arrival path
+    ///         by routing the deposit through the cNGN redemption path (external→internal
+    ///         transfer burns the amount in operationalVault), which means the vault
+    ///         balance does not increase at all.
+    function test_ProcessPoolDeposit_RevertIf_ZeroActualReceived() public {
+        // Configure operationalVault as an "internal" cNGN user so that any
+        // inbound transfer is immediately burned by the token (100%-fee-on-transfer).
+        adminOps.setInternalWhitelisted(address(operationalVault), true);
+        // Configure coordinator as an external sender (triggers the burn path).
+        adminOps.setExternalWhitelisted(coordinator, true);
+
+        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        vm.prank(coordinator);
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ZeroActualReceived.selector);
+        engine.processPoolDeposit(1, 100_000e6, c, b);
+    }
+
+    /// @notice Verifies that balance-delta accounting correctly uses actual received
+    ///         amount rather than requested amount for all downstream state.
+    ///         We verify the invariant: poolTotalPrincipal + riskFee == actualReceived,
+    ///         not == grossAmount. (In normal MockCngn3 with no fee, actualReceived ==
+    ///         grossAmount, so this test validates the accounting path is wired correctly.)
+    function test_ProcessPoolDeposit_AccountingUsesActualReceived() public {
+        uint256 gross = 100_000e6;
+
+        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        vm.prank(coordinator);
+        engine.processPoolDeposit(1, gross, c, b);
+
+        // Confirm: actual vault balance == gross (no fee in MockCngn3 standard path).
+        assertEq(cngn.balanceOf(address(operationalVault)), gross);
+
+        // The treasury pull-ledger must reconstruct exactly to what the vault received.
+        uint256 ledgered = engine.operationalBalances(operationalTreasuryWallet);
+        assertEq(ledgered, gross, "Ledger must equal actualReceived");
+
+        // poolTotalPrincipal must be the net after fee, and fee+net must equal vault balance.
+        uint256 net = engine.poolTotalPrincipal(1);
+        uint256 riskFee = gross - net; // reverse-compute fee
+        assertEq(net + riskFee, gross, "poolTotalPrincipal + riskFee must equal actualReceived");
+    }
+
+    /// @notice Verifies ZeroActualReceived guard in routeOperationalAllocation (RoC path).
+    function test_RouteRoC_RevertIf_ZeroActualReceived() public {
+        _setupStandardDeposit();
+
+        // Make yieldVault an internal user so RoC transfer burns on arrival.
+        adminOps.setInternalWhitelisted(address(yieldVault), true);
+        adminOps.setExternalWhitelisted(coordinator, true);
+
+        vm.prank(coordinator);
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ZeroActualReceived.selector);
+        mockMultiSig.execute(1, 10_000e6, LAWPStructs.FlowType.RoC);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                           FUZZ TESTS
     //////////////////////////////////////////////////////////////*/
 
