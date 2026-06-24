@@ -15,10 +15,25 @@ library LAWPStructs {
 
     /// @notice Tracks the exact fractional equity and RoC state of a contributor.
     /// @dev Uses uint256 to prevent intermediate math overflows during proportional yield calculations.
+    ///
+    ///      PRECISION NOTE - poolShareWAD:
+    ///      The contributor equity share is stored as a WAD fraction (denominator = 1e18).
+    ///      Example: 60% ownership is stored as 600_000_000_000_000_000 (= 0.6 × 1e18).
+    ///
+    ///      This replaces the former Basis Points representation (denominator = 10_000).
+    ///      With a 10,000-unit denominator, any contributor providing less than 1/10,000
+    ///      of the pool total would be rounded to 0, causing an InvalidBPS revert on mint.
+    ///      With a 1e18-unit denominator, a contributor would need to provide less than
+    ///      1 quintillionth (10^-18) of the pool total to be zeroed - economically impossible
+    ///      at cNGN's 6-decimal scale.
+    ///
+    ///      The BPS denominator (10_000) is still used for the risk fee and revenue-routing
+    ///      splits (LA2/MVI1/Dev). Those systems operate on gross protocol amounts, not
+    ///      per-contributor equity fractions.
     struct TokenData {
-        uint256 netPrincipal; // Net CNGN locked after the 7-10% risk fee deduction
+        uint256 netPrincipal; // Net CNGN locked after the risk fee deduction
         uint256 rocReturned; // Amount of principal already returned (capped at netPrincipal)
-        uint256 poolShareBPS; // Fractional ownership in Basis Points (e.g., 2000 = 20%)
+        uint256 poolShareWAD; // Fractional ownership as WAD (1e18 = 100%, 5e17 = 50%)
         uint256 poolId; // Identifier for the specific deployment pool (e.g., FUTO campus)
     }
 

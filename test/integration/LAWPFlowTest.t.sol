@@ -3,15 +3,20 @@ pragma solidity 0.8.30;
 
 import { LAWPTestBase } from "../base/LAWPTestBase.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
+import { ILAWPContributionPool } from "../../src/interfaces/ILAWPContributionPool.sol";
 
 /// @title LAWPFlowTest
-/// @notice End-to-end integration test covering the full LAWP Protocol lifecycle.
-/// @dev Validates: deposit -> revenue routing -> NFT transfer hook -> secondary claims.
-///      Enforces vault isolation, zero-custody engine/controller invariants, and
-///      confirms the relayer is the sole ERC20 fund provider throughout.
+/// @notice End-to-end integration tests covering the full LAWP Protocol lifecycle.
+/// @dev Tests:
+///      1. Direct-coordinator deposit -> revenue routing -> NFT transfer -> secondary claims.
+///      2. ContributionPool deposit -> engine registration -> yield distribution.
+///      3. Multi-pool yield isolation.
+///      4. Batch yield claims.
+///      5. Operational actor claims.
+///      6. Pause blocks all flows.
 contract LAWPFlowTest is LAWPTestBase {
     /*//////////////////////////////////////////////////////////////
-                      FULL LIFECYCLE FLOW TEST
+                       DIRECT COORDINATOR FLOW
     //////////////////////////////////////////////////////////////*/
 
     /// @notice SCENARIO:
@@ -22,7 +27,7 @@ contract LAWPFlowTest is LAWPTestBase {
     ///   5. Buyer claims yield + RoC on the transferred token.
     ///   6. LA2 claims operational funds.
     function test_FullLifecycleFlow() public {
-        // -- STEP 1: 10-user pool deposit -------------------------------------
+        // STEP 1: 10-user pool deposit
         address[] memory users = new address[](10);
         uint256[] memory bps = new uint256[](10);
         for (uint160 i = 0; i < 10; i++) {
@@ -53,7 +58,7 @@ contract LAWPFlowTest is LAWPTestBase {
             assertEq(impactToken.getTokenData(i + 1).netPrincipal, perUserNet);
         }
 
-        // -- STEP 2: GRANT_INITIAL - 50_000e6 ----------------------------------
+        // STEP 2: GRANT_INITIAL - 50_000e6
         // 30% collective (15_000e6) -> yieldVault
         // 50% LA2 (25_000e6) + 20% MVI1 (10_000e6) -> operationalVault
         uint256 grantAmount = 50_000e6;
@@ -69,7 +74,7 @@ contract LAWPFlowTest is LAWPTestBase {
         assertEq(cngn.balanceOf(address(engine)), 0);
         assertEq(cngn.balanceOf(address(mockMultiSig)), 0);
 
-        // -- STEP 3: User[0] transfers Token 1 to a buyer ----------------------
+        // STEP 3: User[0] transfers Token 1 to a buyer
         // Expected yield for Token 1 (10% of 15_000e6 collective) = 1_500e6
         address user0 = users[0];
         address buyer = address(999);
@@ -86,7 +91,7 @@ contract LAWPFlowTest is LAWPTestBase {
         assertEq(engine.calculateProportionalYield(1), 0);
         assertEq(impactToken.ownerOf(1), buyer);
 
-        // -- STEP 4: More revenue -----------------------------------------------
+        // STEP 4: More revenue
         // GRANT_CONTINUOUS for buyer: 20_000e6 -> 10% collective = 2_000e6
         // RoC for Buyer: 10_000e6 -> buyer's 10% = 1_000e6 (capped at principal 9_000e6)
 
@@ -94,7 +99,7 @@ contract LAWPFlowTest is LAWPTestBase {
         _routeRevenue(1, 20_000e6, LAWPStructs.FlowType.GRANT_CONTINUOUS);
         _routeRevenue(1, 10_000e6, LAWPStructs.FlowType.RoC);
 
-        // -- STEP 5: Buyer claims yield + RoC ----------------------------------
+        // STEP 5: Buyer claims yield + RoC
         // Buyer's yield: 2_000e6 * 10% = 200e6
         // Buyer's RoC:   10_000e6 * 10% = 1_000e6
         uint256 buyerBalBefore = cngn.balanceOf(buyer);
@@ -104,7 +109,7 @@ contract LAWPFlowTest is LAWPTestBase {
         assertEq(cngn.balanceOf(buyer), buyerBalBefore + 200e6 + 1_000e6);
         assertEq(engine.calculateProportionalYield(1), 0);
 
-        // -- STEP 6: LA2 claims operational funds ------------------------------
+        // STEP 6: LA2 claims operational funds
         uint256 la2BalBefore = cngn.balanceOf(la2Wallet);
         vm.prank(la2Wallet);
         engine.claimOperationalFunds(la2Wallet);
@@ -118,7 +123,142 @@ contract LAWPFlowTest is LAWPTestBase {
     }
 
     /*//////////////////////////////////////////////////////////////
-                     MULTI-POOL ISOLATION TEST
+              CONTRIBUTION POOL -> ENGINE FULL FLOW
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice SCENARIO: Admin opens a contribution pool, users contribute,
+    ///         admin settles, then revenue is routed and yield claimed.
+    ///         Confirms that the ContributionPool correctly registers the pool
+    ///         with the engine and that yield flows to the correct token owners.
+    function test_ContributionPool_FullFlow() public {
+        uint256 startTime = block.timestamp;
+        uint256 endTime = block.timestamp + 7 days;
+
+        // 1. Create a pool targeting enginePoolId = 100
+        uint256 poolId = _createContribPool(100, 100_000e6, startTime, endTime);
+
+        // 2. userA (60%) and userB (40%) contribute
+        _contribute(userA, poolId, 60_000e6);
+        _contribute(userB, poolId, 40_000e6);
+
+        // Pool holds the gross
+        assertEq(cngn.balanceOf(address(contributionPool)), 100_000e6);
+
+        // 3. Advance past deadline and settle (admin only)
+        vm.warp(endTime + 1);
+        _settlePool(poolId);
+
+        // ContributionPool fully drained
+        assertEq(cngn.balanceOf(address(contributionPool)), 0);
+        // Engine registered the pool
+        assertTrue(engine.isPoolActive(100));
+
+        // Impact tokens minted: token 1 -> userA (6000 BPS), token 2 -> userB (4000 BPS)
+        assertEq(impactToken.ownerOf(1), userA);
+        assertEq(impactToken.ownerOf(2), userB);
+        assertEq(impactToken.getTokenData(1).poolShareBPS, 6000);
+        assertEq(impactToken.getTokenData(2).poolShareBPS, 4000);
+
+        // 4. Route GRANT_INITIAL 50_000e6 -> collective = 15_000e6
+        _routeRevenue(100, 50_000e6, LAWPStructs.FlowType.GRANT_INITIAL);
+
+        // 5. Claim yield
+        // userA: 60% of 15_000e6 = 9_000e6
+        uint256 balABefore = cngn.balanceOf(userA);
+        vm.prank(userA);
+        engine.claimYield(1);
+        assertEq(cngn.balanceOf(userA), balABefore + 9_000e6);
+
+        // userB: 40% of 15_000e6 = 6_000e6
+        uint256 balBBefore = cngn.balanceOf(userB);
+        vm.prank(userB);
+        engine.claimYield(2);
+        assertEq(cngn.balanceOf(userB), balBBefore + 6_000e6);
+
+        // Zero pending after claims
+        assertEq(engine.calculateProportionalYield(1), 0);
+        assertEq(engine.calculateProportionalYield(2), 0);
+    }
+
+    /// @notice Verifies that a failed pool (goal not met) correctly refunds all contributors.
+    function test_ContributionPool_FailedPool_Refunds() public {
+        uint256 startTime = block.timestamp;
+        uint256 endTime = block.timestamp + 3 days;
+
+        uint256 poolId = _createContribPool(101, 100_000e6, startTime, endTime);
+
+        // Only 60% of goal contributed
+        _contribute(userA, poolId, 60_000e6);
+
+        vm.warp(endTime + 1);
+
+        // Pool status: still Open until first claimRefund or explicit transition
+        assertEq(
+            uint8(contributionPool.getPool(poolId).status),
+            uint8(ILAWPContributionPool.PoolStatus.Open)
+        );
+
+        uint256 balBefore = cngn.balanceOf(userA);
+        vm.prank(userA);
+        contributionPool.claimRefund(poolId);
+
+        // Full refund received
+        assertEq(cngn.balanceOf(userA), balBefore + 60_000e6);
+        // Pool transitioned to Failed
+        assertEq(
+            uint8(contributionPool.getPool(poolId).status),
+            uint8(ILAWPContributionPool.PoolStatus.Failed)
+        );
+        // Pool contract holds zero
+        assertEq(cngn.balanceOf(address(contributionPool)), 0);
+    }
+
+    /// @notice Sequential pools on the same contract - engine pool ids must not collide.
+    function test_ContributionPool_SequentialPools_EngineIsolation() public {
+        uint256 startTime = block.timestamp;
+        uint256 endTime = block.timestamp + 7 days;
+
+        // Pool 1 - enginePoolId 200
+        uint256 p1 = _createContribPool(200, 50_000e6, startTime, endTime);
+        _contribute(userA, p1, 50_000e6);
+
+        // Pool 2 - enginePoolId 201
+        uint256 p2 = _createContribPool(201, 50_000e6, startTime, endTime);
+        _contribute(userB, p2, 50_000e6);
+
+        vm.warp(endTime + 1);
+        _settlePool(p1);
+        _settlePool(p2);
+
+        assertTrue(engine.isPoolActive(200));
+        assertTrue(engine.isPoolActive(201));
+
+        // Route yield to pool 200 only - pool 201 remains unaffected
+        _routeRevenue(200, 10_000e6, LAWPStructs.FlowType.GRANT_INITIAL);
+        assertGt(engine.poolYieldTracker(200), 0);
+        assertEq(engine.poolYieldTracker(201), 0);
+    }
+
+    /// @notice Verify settle is onlyOwner - non-admin cannot trigger settlement.
+    function test_ContributionPool_Settle_OnlyOwner() public {
+        uint256 startTime = block.timestamp;
+        uint256 endTime = block.timestamp + 7 days;
+
+        uint256 poolId = _createContribPool(202, 60_000e6, startTime, endTime);
+        _contribute(userA, poolId, 60_000e6);
+        vm.warp(endTime + 1);
+
+        vm.prank(attacker);
+        vm.expectRevert();
+        contributionPool.settle(poolId);
+
+        // Admin CAN settle
+        _settlePool(poolId);
+        assertTrue(engine.isPoolActive(202));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                 MULTI-POOL YIELD ISOLATION TEST
     //////////////////////////////////////////////////////////////*/
 
     function test_MultiPool_YieldIsolation() public {
@@ -181,7 +321,7 @@ contract LAWPFlowTest is LAWPTestBase {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  OPERATIONAL CLAIMS INTEGRATION TEST
+              OPERATIONAL CLAIMS INTEGRATION TEST
     //////////////////////////////////////////////////////////////*/
 
     function test_AllOperationalActorsClaim() public {
@@ -216,14 +356,14 @@ contract LAWPFlowTest is LAWPTestBase {
     }
 
     /*//////////////////////////////////////////////////////////////
-               ADVERSARIAL: PAUSE BLOCKS ALL FLOWS
+             ADVERSARIAL: PAUSE BLOCKS ALL FLOWS
     //////////////////////////////////////////////////////////////*/
 
     function test_Pause_BlocksAllFlows() public {
         vm.prank(admin);
         engine.emergencyPause();
 
-        // Deposit blocked
+        // Direct deposit blocked
         (address[] memory c, uint256[] memory b) = _singleContributor(userA);
         vm.prank(coordinator);
         vm.expectRevert();
@@ -241,5 +381,34 @@ contract LAWPFlowTest is LAWPTestBase {
         // Now works
         vm.prank(coordinator);
         engine.processPoolDeposit(1, 100_000e6, c, b);
+    }
+
+    /// @notice Pause does NOT affect contributionPool.contribute() (pool is an independent
+    ///         escrow). Only settle() touches the engine, so a paused engine blocks settlement.
+    function test_Pause_BlocksPoolSettlement_NotContribute() public {
+        uint256 startTime = block.timestamp;
+        uint256 endTime = block.timestamp + 7 days;
+
+        uint256 poolId = _createContribPool(300, 60_000e6, startTime, endTime);
+
+        // Contributions are pure escrow - engine pause must NOT affect them
+        vm.prank(admin);
+        engine.emergencyPause();
+
+        _contribute(userA, poolId, 60_000e6); // must succeed
+        assertEq(cngn.balanceOf(address(contributionPool)), 60_000e6);
+
+        vm.warp(endTime + 1);
+
+        // settle() calls engine.processPoolDeposit - blocked by pause
+        vm.prank(admin);
+        vm.expectRevert();
+        contributionPool.settle(poolId);
+
+        // Unpause and settle succeeds
+        vm.prank(admin);
+        engine.unpause();
+        _settlePool(poolId);
+        assertTrue(engine.isPoolActive(300));
     }
 }

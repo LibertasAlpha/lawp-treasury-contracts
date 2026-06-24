@@ -6,6 +6,7 @@ import { LAWPComplianceEngine } from "../../src/core/LAWPComplianceEngine.sol";
 import { LAWPYieldVault } from "../../src/core/LAWPYieldVault.sol";
 import { LAWPOperationalVault } from "../../src/core/LAWPOperationalVault.sol";
 import { LAWPImpactToken } from "../../src/core/LAWPImpactToken.sol";
+import { LAWPContributionPool } from "../../src/core/LAWPContributionPool.sol";
 import { MockMultiSig } from "../mocks/MockMultiSig.sol";
 import { MockCngn3 } from "../mocks/MockCngn3.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
@@ -38,6 +39,7 @@ contract LAWPHandler is Test {
 
     LAWPComplianceEngine public engine;
     LAWPImpactToken public impactToken;
+    LAWPContributionPool public contributionPool;
     MockMultiSig public multiSig;
     MockCngn3 public cngn;
 
@@ -125,8 +127,15 @@ contract LAWPHandler is Test {
                            INTERNAL COUNTERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Auto-incrementing pool ID. Starts at 1, never reuses IDs.
+    /// @dev Auto-incrementing engine pool ID for direct deposits. Starts at 1.
     uint256 private nextPoolId = 1;
+
+    /// @dev Auto-incrementing engine pool ID reserved for ContributionPool settle() calls.
+    ///      Starts at 10_001 to avoid collisions with direct-deposit pool IDs.
+    uint256 private nextContribEnginePoolId = 10_001;
+
+    /// @dev Admin address that owns the ContributionPool (needed to call settle()).
+    address private poolAdmin;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -142,15 +151,19 @@ contract LAWPHandler is Test {
         LAWPYieldVault _yieldVault,
         LAWPOperationalVault _operationalVault,
         LAWPImpactToken _impactToken,
+        LAWPContributionPool _contributionPool,
         MockMultiSig _multiSig,
-        MockCngn3 _cngn
+        MockCngn3 _cngn,
+        address _poolAdmin
     ) {
         engine = _engine;
         yieldVault = _yieldVault;
         operationalVault = _operationalVault;
         impactToken = _impactToken;
+        contributionPool = _contributionPool;
         multiSig = _multiSig;
         cngn = _cngn;
+        poolAdmin = _poolAdmin;
 
         address cngnOwner = cngn.owner();
 
@@ -164,9 +177,13 @@ contract LAWPHandler is Test {
             vm.prank(cngnOwner);
             cngn.mintTest(u, type(uint128).max);
 
-            // Approve ENGINE (not multiSig!) for both deposit + routing.
+            // Approve ENGINE (not multiSig!) for both direct deposit + routing.
             vm.prank(u);
             cngn.approve(address(engine), type(uint256).max);
+
+            // Approve CONTRIBUTION_POOL for pool contribution flows.
+            vm.prank(u);
+            cngn.approve(address(contributionPool), type(uint256).max);
         }
     }
 
@@ -269,14 +286,116 @@ contract LAWPHandler is Test {
             activeTokens.push(tokenId);
         }
 
-        // 7. Micro-invariant: Zero-custody check
-        // The MockMultiSig must still hold zero after deposit (it's not involved
-        // in deposit flows, but we assert it here for belt-and-suspenders).
+        // 7. Micro-invariants: Zero-custody check
         assertEq(
             cngn.balanceOf(address(multiSig)),
             0,
             "Handler post-deposit: MockMultiSig balance leaked"
         );
+        assertEq(
+            cngn.balanceOf(address(engine)),
+            0,
+            "Handler post-deposit: Engine holds cNGN (custody violation)"
+        );
+    }
+
+    // TARGET 6: settleContributionPool
+    /// @notice Simulates the full ContributionPool lifecycle:
+    ///         admin creates a pool, users contribute, admin settles.
+    ///
+    /// @dev WHAT HAPPENS ON-CHAIN:
+    ///      1. contributionPool.createPool(enginePoolId, goal, now, now+7days)
+    ///      2. Up to 5 users contribute equal shares
+    ///      3. vm.warp(endTime + 1)
+    ///      4. admin calls contributionPool.settle(poolId)
+    ///         - settle builds bpsShares[], calls engine.processPoolDeposit
+    ///         - engine mints Impact Tokens and records the pool
+    ///
+    /// @dev GHOST UPDATES:
+    ///      Same as processPoolDeposit - records gross, net capital, vault inflows,
+    ///      and snapshots minted token data for Invariant L.
+    ///
+    /// @param amountSeed   Raw fuzz input - clamped to [10_000e6, 200_000e6] gross.
+    /// @param userCountSeed Raw fuzz input - clamped to [1, 5] contributors.
+    function settleContributionPool(uint256 amountSeed, uint256 userCountSeed) external {
+        uint256 gross = bound(amountSeed, 10_000e6, 200_000e6);
+        uint256 userCount = bound(userCountSeed, 1, 5);
+
+        // Assign a unique engine pool ID that will never collide with direct deposits.
+        uint256 enginePoolId = nextContribEnginePoolId++;
+
+        // 1. Admin creates the pool
+        uint256 startTime = block.timestamp;
+        uint256 endTime = block.timestamp + 7 days;
+
+        vm.prank(poolAdmin);
+        uint256 poolId = contributionPool.createPool(enginePoolId, gross, startTime, endTime);
+
+        // 2. Distribute gross evenly across contributors.
+        //    Each contributor gets floor(gross / userCount); the last absorbs the dust.
+        uint256 perUser = gross / userCount;
+        uint256 remaining = gross;
+
+        for (uint256 i = 0; i < userCount; i++) {
+            address u = activeUsers[i];
+            uint256 amount = (i == userCount - 1) ? remaining : perUser;
+            remaining -= amount;
+
+            vm.prank(u);
+            contributionPool.contribute(poolId, amount);
+        }
+
+        // 3. Advance past the contribution window
+        vm.warp(endTime + 1);
+
+        // 4. Snapshot state before settlement for ghost accounting
+        uint256 riskFee = (gross * 1000) / 10_000;
+        uint256 netCapital = gross - riskFee;
+        uint256 startingTokenId = activeTokens.length + 1;
+
+        // 5. Admin settles (onlyOwner)
+        vm.prank(poolAdmin);
+        contributionPool.settle(poolId);
+
+        // 6. Record this pool in the active pools list
+        activePools.push(enginePoolId);
+
+        // 7. Update ghost variables (mirrors processPoolDeposit ghost logic)
+        ghost_poolGrossDeposits[enginePoolId] = gross;
+        ghost_poolNetDeposits[enginePoolId] = netCapital;
+        ghost_opVaultInflow += gross; // full gross → opVault (risk fee + net capital)
+
+        // 8. Snapshot minted tokens
+        for (uint256 i = 0; i < userCount; i++) {
+            uint256 tokenId = startingTokenId + i;
+            require(
+                impactToken.ownerOf(tokenId) != address(0),
+                "Handler settleContributionPool: token not minted"
+            );
+            LAWPStructs.TokenData memory data = impactToken.getTokenData(tokenId);
+            ghost_tokenPrincipalSnapshot[tokenId] = data.netPrincipal;
+            ghost_tokenBPSSnapshot[tokenId] = data.poolShareBPS;
+            activeTokens.push(tokenId);
+        }
+
+        // 9. Micro-invariants
+        assertEq(
+            cngn.balanceOf(address(contributionPool)),
+            0,
+            "Handler settleContributionPool: ContributionPool must hold zero after settle"
+        );
+        assertEq(
+            cngn.balanceOf(address(engine)),
+            0,
+            "Handler settleContributionPool: Engine holds cNGN (custody violation)"
+        );
+        assertTrue(
+            engine.isPoolActive(enginePoolId),
+            "Handler settleContributionPool: Engine did not register pool after settle"
+        );
+
+        // Wind the clock back so future contribute() calls are within a valid window.
+        vm.warp(block.timestamp - 7 days - 1);
     }
 
     // TARGET 2: routeRevenue

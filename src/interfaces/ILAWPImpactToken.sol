@@ -20,7 +20,7 @@ interface ILAWPImpactToken is IERC721 {
 
     /// @notice Emitted when an Impact Token is minted representing a contributor's equity.
     event ImpactTokenMinted(
-        uint256 indexed tokenId, address indexed owner, uint256 netPrincipal, uint256 poolShareBPS
+        uint256 indexed tokenId, address indexed owner, uint256 netPrincipal, uint256 poolShareWAD
     );
 
     /*//////////////////////////////////////////////////////////////
@@ -30,16 +30,16 @@ interface ILAWPImpactToken is IERC721 {
     /// @notice Mints a new Impact Token. Strictly gated to the Compliance Engine.
     /// @param to The address of the contributor.
     /// @param netPrincipal The locked capital after the risk fee deduction.
-    /// @param poolShareBPS The proportional percentage in Basis Points.
+    /// @param poolShareWAD The proportional share as a WAD fraction (1e18 = 100%).
     /// @param poolId The project deployment pool ID.
     /// @return The ID of the newly minted token.
-    function mint(address to, uint256 netPrincipal, uint256 poolShareBPS, uint256 poolId)
+    function mint(address to, uint256 netPrincipal, uint256 poolShareWAD, uint256 poolId)
         external
         returns (uint256);
 
     /// @notice Retrieves the immutable and updatable state data for a specific token.
     /// @param tokenId The ID of the token.
-    /// @return The TokenData struct containing principal, returned RoC, and BPS share.
+    /// @return The TokenData struct containing principal, returned RoC, and WAD share.
     function getTokenData(uint256 tokenId) external view returns (LAWPStructs.TokenData memory);
 
     /// @notice Updates the `rocReturned` state when RoC payouts are processed.

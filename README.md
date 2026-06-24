@@ -84,8 +84,8 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
    ```
 
 2. **LAWPComplianceEngine processes request:**
-   - Queries `LAWPImpactToken` for the token's `poolId`, `poolShareBPS`, and `rocReturned`.
-   - Computes total historical yield for the pool: `(poolYieldTracker[poolId] * poolShareBPS) / 10000`.
+   - Queries `LAWPImpactToken` for the token's `poolId`, `poolShareWAD`, and `rocReturned`.
+   - Computes total historical yield for the pool: `(poolYieldTracker[poolId] * poolShareWAD) / 1e18`.
    - Subtracts the user's previously claimed yield: `totalHistorical - yieldClaimed[tokenId]`.
 
 3. **Internal operations:**
@@ -100,7 +100,8 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
 
 - **LAWPStructs.TokenData (Struct)**
   - **Description:** Tracks the exact fractional equity and RoC state of a contributor.
-  - **Fields:** `uint256 netPrincipal`, `uint256 rocReturned`, `uint256 poolShareBPS`, `uint256 poolId`
+  - **Fields:** `uint256 netPrincipal`, `uint256 rocReturned`, `uint256 poolShareWAD`, `uint256 poolId`
+  - **Precision Note:** `poolShareWAD` uses a WAD denominator (`1e18 = 100%`). This replaces the former Basis Points representation (`10,000 = 100%`). WAD precision means a contributor's equity share rounds to zero only if they provide less than 1 quintillionth of the pool - economically impossible at cNGN's 6-decimal scale.
 
 - **LAWPStructs.Proposal (Struct - EIP-712)**
   - **Description:** Gas-optimized proposal structure for off-chain Multi-Sig payloads.

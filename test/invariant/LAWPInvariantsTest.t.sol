@@ -7,6 +7,7 @@ import { LAWPYieldVault } from "../../src/core/LAWPYieldVault.sol";
 import { LAWPOperationalVault } from "../../src/core/LAWPOperationalVault.sol";
 import { LAWPImpactToken } from "../../src/core/LAWPImpactToken.sol";
 import { LAWPActorRegistry } from "../../src/core/LAWPActorRegistry.sol";
+import { LAWPContributionPool } from "../../src/core/LAWPContributionPool.sol";
 import { MockCngn3, MockAdminOperations } from "../mocks/MockCngn3.sol";
 import { MockMultiSig } from "../mocks/MockMultiSig.sol";
 import { LAWPHandler } from "./LAWPHandler.sol";
@@ -48,6 +49,7 @@ contract LAWPInvariantsTest is Test {
     LAWPOperationalVault public operationalVault;
     LAWPImpactToken public impactToken;
     LAWPActorRegistry public registry;
+    LAWPContributionPool public contributionPool;
     MockCngn3 public cngn;
     MockMultiSig public multiSig;
     LAWPHandler public handler;
@@ -104,18 +106,31 @@ contract LAWPInvariantsTest is Test {
         // MockMultiSig: zero-custody pass-through
         multiSig = new MockMultiSig(address(engine));
 
+        // ContributionPool: reusable multi-pool escrow owned by admin.
+        contributionPool = new LAWPContributionPool(address(cngn), admin);
+
         // Wire trust boundaries
         vm.startPrank(admin);
         engine.setMultiSigController(address(multiSig));
         yieldVault.setComplianceEngine(address(engine));
         operationalVault.setComplianceEngine(address(engine));
         impactToken.setComplianceEngine(address(engine));
+        contributionPool.setComplianceEngine(address(engine));
         vm.stopPrank();
 
         // Fuzz Handler
         // The handler seeds relayer addresses, manages ghost variables, and
         // calls the protocol with constrained valid inputs.
-        handler = new LAWPHandler(engine, yieldVault, operationalVault, impactToken, multiSig, cngn);
+        handler = new LAWPHandler(
+            engine,
+            yieldVault,
+            operationalVault,
+            impactToken,
+            contributionPool,
+            multiSig,
+            cngn,
+            admin // pool admin = invariant test admin
+        );
 
         // Tell Foundry: ONLY call functions on `handler`.
         // The fuzzer will never call protocol contracts directly.
@@ -343,20 +358,20 @@ contract LAWPInvariantsTest is Test {
     }
 
     // INVARIANT I: Zero-Custody
-    /// @notice The Compliance Engine and MockMultiSig must NEVER hold cNGN.
-    ///         Protocol funds must only reside in the two dedicated vaults.
+    /// @notice The Compliance Engine, MockMultiSig, AND ContributionPool must NEVER
+    ///         hold cNGN between settled states. Protocol funds must only reside in
+    ///         the two dedicated vaults.
     ///
     /// @dev WHY IT MATTERS:
     ///      The engine is a mathematical switchboard - not a custody account.
-    ///      If the engine held cNGN, a bug or admin key compromise could drain
-    ///      all pooled capital in a single call. Similarly, the MultiSig is a
-    ///      verification bridge only. Any cNGN balance in either contract is a
-    ///      critical architectural violation.
+    ///      The ContributionPool is an escrow - once settle() completes the full
+    ///      gross amount is transferred to the engine (and on to the opVault).
+    ///      Any residual balance in any of these three contracts is a violation.
     ///
-    ///      ALSO CATCHES:
-    ///        - A safeTransfer to address(this) inside the engine
-    ///        - A misconfigured vault address that routes to engine
-    ///        - A reentrancy attack that leaves residual balance
+    ///      NOTE: The ContributionPool legitimately holds cNGN DURING a contribution
+    ///      window (between contribute() calls and settle()). The handler's
+    ///      settleContributionPool() always calls settle() before returning, so at
+    ///      any invariant check point the pool must be empty.
     function invariant_I_ZeroCustody() public view {
         assertEq(
             cngn.balanceOf(address(engine)),
@@ -367,6 +382,11 @@ contract LAWPInvariantsTest is Test {
             cngn.balanceOf(address(multiSig)),
             0,
             "Invariant I: MockMultiSig holds cNGN - critical custody violation"
+        );
+        assertEq(
+            cngn.balanceOf(address(contributionPool)),
+            0,
+            "Invariant I: ContributionPool holds cNGN after settlement - custody violation"
         );
     }
 

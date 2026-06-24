@@ -9,10 +9,19 @@ import { LAWPOperationalVault } from "../src/core/LAWPOperationalVault.sol";
 import { LAWPImpactToken } from "../src/core/LAWPImpactToken.sol";
 import { LAWPActorRegistry } from "../src/core/LAWPActorRegistry.sol";
 import { LAWPMultiSigController } from "../src/core/LAWPMultiSigController.sol";
+import { LAWPContributionPool } from "../src/core/LAWPContributionPool.sol";
 
 /// @title LAWP System Deployment Script
-/// @notice Deploys immutable system bytecode and foundational contracts
+/// @notice Deploys immutable system bytecode and foundational contracts.
 /// @dev This script ONLY deploys. No wiring, no ownership finalization.
+///      Deployment order:
+///        1. LAWPActorRegistry
+///        2. LAWPYieldVault
+///        3. LAWPOperationalVault
+///        4. LAWPImpactToken
+///        5. LAWPComplianceEngine
+///        6. LAWPMultiSigController
+///        7. LAWPContributionPool
 contract DeployLAWPSystem is Script {
     /*//////////////////////////////////////////////////////////////
                             CONFIGURATION
@@ -99,6 +108,15 @@ contract DeployLAWPSystem is Script {
         );
 
         console2.log("MultiSigController deployed at:", address(multiSigController));
+
+        /*//////////////////////////////////////////////////////////////
+                            CONTRIBUTION POOL
+        //////////////////////////////////////////////////////////////*/
+
+        LAWPContributionPool contributionPool =
+            new LAWPContributionPool(cNGNTokenAddress, deployerAddress);
+
+        console2.log("ContributionPool deployed at:", address(contributionPool));
 
         vm.stopBroadcast();
 

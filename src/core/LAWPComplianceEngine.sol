@@ -50,9 +50,6 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     error LAWPComplianceEngine_UnauthorizedInjector(address fundProvider);
     error LAWPComplianceEngine_ZeroAddressInjector();
     error LAWPComplianceEngine_InvalidPool();
-    /// @notice Reverts when a transfer arrives with zero net tokens despite a non-zero request.
-    ///         Indicates a 100% fee-on-transfer token or a rebasing token that zeroed the balance.
-    ///         Accounting with zero actualReceived would silently corrupt pool state.
     error LAWPComplianceEngine_ZeroActualReceived();
 
     /*//////////////////////////////////////////////////////////////
@@ -85,13 +82,27 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @notice Circuit Breaker: Absolute maximum permissible risk fee to prevent misconfiguration (10% = 1000 BPS).
     uint256 public constant MAX_RISK_FEE = 1000;
 
-    /// @notice Circuit Breaker: Maximum number of contributors allowed per pool deposit to prevent block gas limit DoS.
+    /// @notice Maximum number of contributors allowed per pool deposit to prevent block gas limit DoS.
     uint256 public constant MAX_CONTRIBUTORS = 20;
 
     /// @notice Circuit Breaker: Maximum number of tokens processed in a single batch claim to prevent block gas limit DoS.
     uint256 public constant MAX_BATCH_CLAIM = 20;
 
-    /// @notice Total basis points constant representing 100% for proportional calculations.
+    /// @notice WAD denominator for contributor equity shares (1e18 = 100%).
+    ///
+    /// @dev SEPARATION OF CONCERNS:
+    ///      TOTAL_SHARES (1e18) governs per-contributor fractional equity stored in
+    ///      TokenData.poolShareWAD. It controls how yield and RoC are split among token holders.
+    ///
+    ///      TOTAL_BPS (10_000) governs the risk fee and the revenue routing splits
+    ///      (LA2/MVI1/Dev). Those systems operate on protocol-level gross amounts,
+    ///      not per-contributor equity fractions, and their BPS values are well within
+    ///      the range where 4-decimal precision is perfectly adequate.
+    uint256 public constant TOTAL_SHARES = 1e18;
+
+    /// @notice Basis points denominator for risk fee and revenue-routing split calculations.
+    ///         Kept at 10,000 because those splits (e.g. 30/50/20, 10/55/25/10) are
+    ///         fixed protocol parameters - not user-contributed fractional equity.
     uint256 public constant TOTAL_BPS = 10_000;
 
     /// @notice Tracks the cumulative Continuous Yield routed to a specific poolId. Updated during revenue routing.
@@ -241,7 +252,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         uint256 _poolId,
         uint256 _grossAmount,
         address[] calldata _contributors,
-        uint256[] calldata _bpsShares
+        uint256[] calldata _wadShares
     ) external override whenNotPaused nonReentrant {
         // Checks: Validate inputs, enforce maximum contributors bound, and confirm new poolId.
         if (pools[_poolId].exists) revert LAWPComplianceEngine_PoolAlreadyExists();
@@ -249,12 +260,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         uint256 contributorsLength = _contributors.length;
         if (contributorsLength > MAX_CONTRIBUTORS) revert LAWPComplianceEngine_ArrayTooLarge();
-        if (contributorsLength == 0 || contributorsLength != _bpsShares.length) {
+        if (contributorsLength == 0 || contributorsLength != _wadShares.length) {
             revert LAWPComplianceEngine_ArrayMismatch();
         }
 
-        // 1. Verify exact 100% allocation across all contributors.
-        _validateBPS(_bpsShares, contributorsLength);
+        // 1. Verify exact 100% allocation (sum of WAD shares == 1e18).
+        _validateWAD(_wadShares, contributorsLength);
 
         // 2. Resolve the Operational Treasury address before any state mutation.
         address opTreasury = registry.operationalTreasuryWallet();
@@ -292,7 +303,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         emit RiskFeeAssessed(_poolId, actualReceived, riskFee, netCapital);
 
         // 8. Mint fractional shares to contributors based on actual net capital.
-        _mintContributorShares(_poolId, netCapital, _contributors, _bpsShares, contributorsLength);
+        _mintContributorShares(_poolId, netCapital, _contributors, _wadShares, contributorsLength);
 
         emit CapitalPooled(_poolId, actualReceived, riskFee);
     }
@@ -510,20 +521,16 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
     /// @inheritdoc ILAWPComplianceEngine
     function calculateProportionalYield(uint256 _tokenId) external view override returns (uint256) {
-        // ============================================================================
-        // O(1) CUMULATIVE MATH ENGINE (Read-Only)
-        // ----------------------------------------------------------------------------
-        // Mirrors the math in `_claimYieldForToken` explicitly, serving solely as a
-        // read-only getter for frontends. See `_claimYieldForToken` for math breakdown.
-        // ============================================================================
         LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
 
-        uint256 totalYieldForToken = (poolYieldTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;
+        // WAD math: multiply by share (≤ 1e18), then divide by 1e18.
+        uint256 totalYieldForToken =
+            (poolYieldTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
         uint256 claimableYield = totalYieldForToken > yieldClaimed[_tokenId]
             ? totalYieldForToken - yieldClaimed[_tokenId]
             : 0;
 
-        uint256 totalRocForToken = (poolRocTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;
+        uint256 totalRocForToken = (poolRocTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
         uint256 claimableRoc =
             totalRocForToken > data.rocReturned ? totalRocForToken - data.rocReturned : 0;
 
@@ -579,13 +586,29 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
 
-        // 1. Continuous Yield Calculation (O(1) Pro-Rata Math)
-        uint256 totalYield = (poolYieldTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;
+        // ============================================================================
+        // O(1) CUMULATIVE MATH ENGINE - WAD Precision
+        // ----------------------------------------------------------------------------
+        // Instead of looping to calculate yield on every transaction, we track the
+        // ALL-TIME historical yield of the pool. A token's claimable amount is its
+        // lifetime slice of that all-time yield, minus what it has already claimed.
+        //
+        // YIELD MATH: (Historical Pool Yield × Token WAD Share / 1e18) - Already Claimed Yield
+        // ROC MATH:   (Historical Pool RoC   × Token WAD Share / 1e18) - Already Claimed RoC
+        //
+        // WAD precision (1e18) ensures that contributors providing as little as 1 unit
+        // of a cNGN-denominated pool never truncate to 0 at economically meaningful scales.
+        //
+        // HARD CAP: RoC payout is strictly capped to never exceed `netPrincipal`.
+        // ============================================================================
+
+        // 1. Continuous Yield Calculation (O(1) WAD Pro-Rata Math)
+        uint256 totalYield = (poolYieldTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
         uint256 claimableYield =
             totalYield > yieldClaimed[_tokenId] ? totalYield - yieldClaimed[_tokenId] : 0;
 
         // 2. RoC Calculation (Strictly capped at net principal)
-        uint256 totalRoc = (poolRocTracker[data.poolId] * data.poolShareBPS) / TOTAL_BPS;
+        uint256 totalRoc = (poolRocTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
         uint256 claimableRoc = totalRoc > data.rocReturned ? totalRoc - data.rocReturned : 0;
 
         // 3. Hard Cap: Ensure RoC payout never exceeds the net principal.
@@ -608,20 +631,22 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         }
     }
 
-    /// @notice Iterates over the `_bpsShares` array to confirm the sum equals exactly 10,000 (100%).
+    /// @notice Iterates over the `_wadShares` array to confirm the sum equals exactly 1e18 (100%).
     /// @dev Extracted internally to optimize stack depth inside the `processPoolDeposit` function.
-    function _validateBPS(uint256[] calldata _bpsShares, uint256 _contributorsLength)
+    ///      Uses TOTAL_SHARES (1e18) instead of the former TOTAL_BPS (10_000) to eliminate
+    ///      the truncation floor that caused micro-contributor zeroing under BPS.
+    function _validateWAD(uint256[] calldata _wadShares, uint256 _contributorsLength)
         internal
         pure
     {
-        uint256 totalBPS = 0;
+        uint256 totalWAD = 0;
         for (uint256 i; i < _contributorsLength;) {
-            totalBPS += _bpsShares[i];
+            totalWAD += _wadShares[i];
             unchecked {
                 ++i;
             }
         }
-        if (totalBPS != TOTAL_BPS) revert LAWPComplianceEngine_InvalidBPS();
+        if (totalWAD != TOTAL_SHARES) revert LAWPComplianceEngine_InvalidBPS();
     }
 
     /// @notice Determines the systemic risk fee and final net capital from a gross deposit amount.
@@ -636,12 +661,15 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /// @notice Loops through contributors to mint their fractional Impact Equity tokens.
-    /// @dev Transfers all rounding dust (wei) to the final contributor in the array to ensure the total principal equals exact net capital.
+    /// @dev Computes WAD shares for each contributor:
+    ///      share_i = floor(amount_i / totalRaised × 1e18)
+    ///      The last contributor absorbs rounding dust so sum(wadShares) == 1e18 exactly.
+    ///      Principal is derived proportionally from netCapital using the same amounts.
     function _mintContributorShares(
         uint256 _poolId,
         uint256 _netCapital,
         address[] calldata _contributors,
-        uint256[] calldata _bpsShares,
+        uint256[] calldata _wadShares,
         uint256 _contributorsLength
     ) internal {
         uint256 remainingCapital = _netCapital;
@@ -649,14 +677,13 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         for (uint256 i; i < _contributorsLength;) {
             if (i == lastIndex) {
-                // Final contributor absorbs any mathematical dust to maintain total principal integrity
-                /* uint256 mintedTokenId = */
-                impactToken.mint(_contributors[i], remainingCapital, _bpsShares[i], _poolId);
+                // Final contributor absorbs any dust to maintain exact total principal integrity.
+                impactToken.mint(_contributors[i], remainingCapital, _wadShares[i], _poolId);
             } else {
-                uint256 userNetPrincipal = (_netCapital * _bpsShares[i]) / TOTAL_BPS;
+                // WAD-proportional principal: preserves exact fractional ownership.
+                uint256 userNetPrincipal = (_netCapital * _wadShares[i]) / TOTAL_SHARES;
                 remainingCapital -= userNetPrincipal;
-                /* uint256 mintedTokenId = */
-                impactToken.mint(_contributors[i], userNetPrincipal, _bpsShares[i], _poolId);
+                impactToken.mint(_contributors[i], userNetPrincipal, _wadShares[i], _poolId);
             }
             unchecked {
                 ++i;

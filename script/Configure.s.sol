@@ -9,6 +9,7 @@ import { LAWPOperationalVault } from "../src/core/LAWPOperationalVault.sol";
 import { LAWPImpactToken } from "../src/core/LAWPImpactToken.sol";
 import { LAWPActorRegistry } from "../src/core/LAWPActorRegistry.sol";
 import { LAWPMultiSigController } from "../src/core/LAWPMultiSigController.sol";
+import { LAWPContributionPool } from "../src/core/LAWPContributionPool.sol";
 
 /// @title LAWP System Configuration Script
 /// @notice Wires all trust boundaries and initiates ownership transfer
@@ -24,6 +25,7 @@ contract ConfigureLAWPSystem is Script {
     LAWPImpactToken internal impactToken;
     LAWPActorRegistry internal actorRegistry;
     LAWPMultiSigController internal multiSigController;
+    LAWPContributionPool internal contributionPool;
 
     address internal adminSafeAddress;
     address internal deployerAddress;
@@ -69,6 +71,8 @@ contract ConfigureLAWPSystem is Script {
         actorRegistry = LAWPActorRegistry(vm.envAddress("REGISTRY_ADDRESS"));
 
         multiSigController = LAWPMultiSigController(vm.envAddress("MULTISIG_ADDRESS"));
+
+        contributionPool = LAWPContributionPool(vm.envAddress("CONTRIBUTION_POOL_ADDRESS"));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -92,6 +96,7 @@ contract ConfigureLAWPSystem is Script {
         yieldVault.setComplianceEngine(address(complianceEngine));
         operationalVault.setComplianceEngine(address(complianceEngine));
         impactToken.setComplianceEngine(address(complianceEngine));
+        contributionPool.setComplianceEngine(address(complianceEngine));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -105,6 +110,7 @@ contract ConfigureLAWPSystem is Script {
         impactToken.transferOwnership(adminSafeAddress);
         complianceEngine.transferOwnership(adminSafeAddress);
         multiSigController.transferOwnership(adminSafeAddress);
+        contributionPool.transferOwnership(adminSafeAddress);
     }
 
     function _validatePendingOwnership() internal view {
@@ -114,6 +120,7 @@ contract ConfigureLAWPSystem is Script {
         require(impactToken.pendingOwner() == adminSafeAddress);
         require(complianceEngine.pendingOwner() == adminSafeAddress);
         require(multiSigController.pendingOwner() == adminSafeAddress);
+        require(contributionPool.pendingOwner() == adminSafeAddress);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -129,6 +136,7 @@ contract ConfigureLAWPSystem is Script {
         impactToken.acceptOwnership();
         complianceEngine.acceptOwnership();
         multiSigController.acceptOwnership();
+        contributionPool.acceptOwnership();
 
         vm.stopPrank();
 
@@ -168,6 +176,18 @@ contract ConfigureLAWPSystem is Script {
         require(
             impactToken.complianceEngine() == address(complianceEngine),
             "Integrity: ImpactToken engine mismatch"
+        );
+
+        require(
+            contributionPool.complianceEngine() == address(complianceEngine),
+            "Integrity: ContributionPool engine mismatch"
+        );
+
+        require(
+            address(contributionPool.cNGNToken()) == address(complianceEngine.cNGNToken())
+                && address(operationalVault.cNGNToken()) == address(complianceEngine.cNGNToken())
+                && address(yieldVault.cNGNToken()) == address(complianceEngine.cNGNToken()),
+            "Integrity: cNGNToken mismatch"
         );
 
         console2.log("=== SYSTEM CONFIGURATION COMPLETE ===");

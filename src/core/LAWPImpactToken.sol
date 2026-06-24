@@ -26,13 +26,18 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     error LAWPImpactToken_ZeroAddress();
     error LAWPImpactToken_InvalidBaseURI();
     error LAWPImpactToken_InvalidPrincipal();
-    error LAWPImpactToken_InvalidBPS();
+    error LAWPImpactToken_InvalidShare();
     error LAWPImpactToken_InvalidPoolId();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     uint256 private _nextTokenId = 1;
+
+    /// @notice WAD denominator: 1e18 = 100% share.
+    ///         Any contributor whose WAD share rounds to 0 would need to provide
+    ///         less than 1 quintillionth of the pool economically impossible.
+    uint256 public constant TOTAL_SHARES = 1e18;
 
     /// @notice The LAWPComplianceEngine contract that controls minting, updates, and claims. Critical for enforcing invariants and preventing double-spend exploits.
     address public complianceEngine;
@@ -116,7 +121,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPImpactToken
-    function mint(address _to, uint256 _netPrincipal, uint256 _poolShareBPS, uint256 _poolId)
+    function mint(address _to, uint256 _netPrincipal, uint256 _poolShareWAD, uint256 _poolId)
         external
         override
         onlyComplianceEngine
@@ -124,7 +129,9 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     {
         if (_to == address(0)) revert LAWPImpactToken_ZeroAddressMint();
         if (_netPrincipal == 0) revert LAWPImpactToken_InvalidPrincipal();
-        if (_poolShareBPS == 0 || _poolShareBPS > 10000) revert LAWPImpactToken_InvalidBPS();
+        if (_poolShareWAD == 0 || _poolShareWAD > TOTAL_SHARES) {
+            revert LAWPImpactToken_InvalidShare();
+        }
         if (_poolId == 0) revert LAWPImpactToken_InvalidPoolId();
 
         tokenId = _nextTokenId++;
@@ -132,11 +139,11 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
         _tokenData[tokenId] = LAWPStructs.TokenData({
             netPrincipal: _netPrincipal,
             rocReturned: 0,
-            poolShareBPS: _poolShareBPS,
+            poolShareWAD: _poolShareWAD,
             poolId: _poolId
         });
 
-        emit ImpactTokenMinted(tokenId, _to, _netPrincipal, _poolShareBPS);
+        emit ImpactTokenMinted(tokenId, _to, _netPrincipal, _poolShareWAD);
 
         _mint(_to, tokenId);
     }

@@ -13,6 +13,7 @@ import { LAWPOperationalVault } from "../../src/core/LAWPOperationalVault.sol";
 import { LAWPImpactToken } from "../../src/core/LAWPImpactToken.sol";
 import { LAWPActorRegistry } from "../../src/core/LAWPActorRegistry.sol";
 import { LAWPMultiSigController } from "../../src/core/LAWPMultiSigController.sol";
+import { LAWPContributionPool } from "../../src/core/LAWPContributionPool.sol";
 
 /// @title DeploymentScriptsTest
 /// @notice Full branch + line + function coverage for Deploy.s.sol and Configure.s.sol
@@ -20,27 +21,28 @@ contract DeploymentScriptsTest is Test {
     DeployLAWPSystem internal deployScript;
     ConfigureLAWPSystem internal configureScript;
 
-    // ----------------------------
-    // Actors
-    // ----------------------------
+    /*//////////////////////////////////////////////////////////////
+                                 ACTORS
+    //////////////////////////////////////////////////////////////*/
     uint256 internal constant DEPLOYER_PRIVATE_KEY = 0xA11CE;
     address internal deployer;
     uint256 internal constant ADMIN_SAFE_PRIVATE_KEY = 0xB0B;
     address internal adminSafe;
 
-    // ----------------------------
-    // Deployed contract addresses
-    // ----------------------------
+    /*//////////////////////////////////////////////////////////////
+                      DEPLOYED CONTRACT ADDRESSES
+    //////////////////////////////////////////////////////////////*/
     address internal registryAddress;
     address internal yieldVaultAddress;
     address internal operationalVaultAddress;
     address internal impactTokenAddress;
     address internal engineAddress;
     address internal multiSigAddress;
+    address internal contributionPoolAddress;
 
-    // ----------------------------
-    // Setup
-    // ----------------------------
+    /*//////////////////////////////////////////////////////////////
+                                 SETUP
+    //////////////////////////////////////////////////////////////*/
     function setUp() public {
         deployer = vm.addr(DEPLOYER_PRIVATE_KEY);
         adminSafe = vm.addr(ADMIN_SAFE_PRIVATE_KEY);
@@ -74,9 +76,18 @@ contract DeploymentScriptsTest is Test {
         vm.setEnv("DEV_WALLET", vm.toString(address(0xDD)));
     }
 
-    // ------------------------------------------------------------
-    // Deployment execution + deterministic address capture
-    // ------------------------------------------------------------
+    /*//////////////////////////////////////////////////////////////
+          DEPLOYMENT EXECUTION + DETERMINISTIC ADDRESS CAPTURE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Deploy.s.sol deploys contracts in this order:
+    ///      nonce+0: LAWPActorRegistry
+    ///      nonce+1: LAWPYieldVault
+    ///      nonce+2: LAWPOperationalVault
+    ///      nonce+3: LAWPImpactToken
+    ///      nonce+4: LAWPComplianceEngine
+    ///      nonce+5: LAWPMultiSigController
+    ///      nonce+6: LAWPContributionPool   ← added
     function _deploySystem() internal {
         uint256 deployNonce = vm.getNonce(deployer);
 
@@ -88,6 +99,7 @@ contract DeploymentScriptsTest is Test {
         impactTokenAddress = vm.computeCreateAddress(deployer, deployNonce + 3);
         engineAddress = vm.computeCreateAddress(deployer, deployNonce + 4);
         multiSigAddress = vm.computeCreateAddress(deployer, deployNonce + 5);
+        contributionPoolAddress = vm.computeCreateAddress(deployer, deployNonce + 6);
 
         vm.setEnv("ENGINE_ADDRESS", vm.toString(engineAddress));
         vm.setEnv("YIELD_VAULT_ADDRESS", vm.toString(yieldVaultAddress));
@@ -95,6 +107,7 @@ contract DeploymentScriptsTest is Test {
         vm.setEnv("TOKEN_ADDRESS", vm.toString(impactTokenAddress));
         vm.setEnv("REGISTRY_ADDRESS", vm.toString(registryAddress));
         vm.setEnv("MULTISIG_ADDRESS", vm.toString(multiSigAddress));
+        vm.setEnv("CONTRIBUTION_POOL_ADDRESS", vm.toString(contributionPoolAddress));
     }
 
     // ============================================================
@@ -114,6 +127,7 @@ contract DeploymentScriptsTest is Test {
         assertEq(LAWPImpactToken(impactTokenAddress).owner(), adminSafe);
         assertEq(LAWPComplianceEngine(engineAddress).owner(), adminSafe);
         assertEq(LAWPMultiSigController(multiSigAddress).owner(), adminSafe);
+        assertEq(LAWPContributionPool(contributionPoolAddress).owner(), adminSafe);
 
         // ----------------------------
         // Wiring validation
@@ -127,6 +141,11 @@ contract DeploymentScriptsTest is Test {
         assertEq(LAWPYieldVault(yieldVaultAddress).complianceEngine(), engineAddress);
         assertEq(LAWPOperationalVault(operationalVaultAddress).complianceEngine(), engineAddress);
         assertEq(LAWPImpactToken(impactTokenAddress).complianceEngine(), engineAddress);
+
+        // ContributionPool wiring
+        LAWPContributionPool pool = LAWPContributionPool(contributionPoolAddress);
+        assertEq(address(pool.complianceEngine()), engineAddress);
+        assertEq(address(pool.cNGNToken()), vm.envAddress("CNGN_TOKEN_ADDRESS"));
 
         // ----------------------------
         // Registry correctness
@@ -181,6 +200,11 @@ contract DeploymentScriptsTest is Test {
         _expectPreFlightFailure(multiSigAddress);
     }
 
+    function test_PreFlight_ContributionPoolMismatch() public {
+        _deploySystem();
+        _expectPreFlightFailure(contributionPoolAddress);
+    }
+
     // ============================================================
     // POST-FLIGHT FAILURE BRANCHES
     // ============================================================
@@ -228,6 +252,17 @@ contract DeploymentScriptsTest is Test {
             abi.encodeWithSignature("multiSigController()"),
             abi.encode(address(0)),
             "Integrity: MultiSig mismatch"
+        );
+    }
+
+    function test_PostFlight_ContributionPoolEngineMismatch() public {
+        _deploySystem();
+
+        _expectPostFlightFailure(
+            contributionPoolAddress,
+            abi.encodeWithSignature("complianceEngine()"),
+            abi.encode(address(0)),
+            "Integrity: ContributionPool engine mismatch"
         );
     }
 }

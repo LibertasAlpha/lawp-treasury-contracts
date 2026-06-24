@@ -7,6 +7,7 @@ import { LAWPYieldVault } from "../../src/core/LAWPYieldVault.sol";
 import { LAWPOperationalVault } from "../../src/core/LAWPOperationalVault.sol";
 import { LAWPImpactToken } from "../../src/core/LAWPImpactToken.sol";
 import { LAWPActorRegistry } from "../../src/core/LAWPActorRegistry.sol";
+import { LAWPContributionPool } from "../../src/core/LAWPContributionPool.sol";
 import { MockCngn3, MockAdminOperations } from "../mocks/MockCngn3.sol";
 import { MockMultiSig } from "../mocks/MockMultiSig.sol";
 import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
@@ -30,7 +31,14 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 ///        engine does: safeTransferFrom(_fundProvider=coordinator, vault, amount)
 ///        Approval needed: coordinator -> approves ENGINE
 ///
-///      Both flows share the SAME approval (coordinator -> engine).
+///      contributionPool (pool contribution flow):
+///        users -> contributionPool.contribute(poolId, amount)
+///        admin  -> contributionPool.settle(poolId)  [onlyOwner]
+///        contributionPool -> engine.processPoolDeposit(enginePoolId, totalRaised, contributors, bpsShares)
+///        Approval needed: users -> approve CONTRIBUTION_POOL
+///                         contributionPool -> approves ENGINE (set/cleared inside settle())
+///
+///      Both direct and MultiSig deposit flows share the SAME approval (coordinator -> engine).
 ///      MockMultiSig holds ZERO cNGN at all times.
 ///      After deposit: only LAWPOperationalVault holds cNGN (full gross amount).
 ///      After revenue routing: LAWPYieldVault accumulates collective yield and RoC.
@@ -45,6 +53,7 @@ abstract contract LAWPTestBase is Test {
     LAWPOperationalVault public operationalVault;
     LAWPImpactToken public impactToken;
     LAWPActorRegistry public registry;
+    LAWPContributionPool public contributionPool;
     MockCngn3 public cngn;
     MockAdminOperations public adminOps;
     MockMultiSig public mockMultiSig;
@@ -88,6 +97,7 @@ abstract contract LAWPTestBase is Test {
         _deployImpactToken();
         _deployEngine();
         _deployMockMultiSig();
+        _deployContributionPool();
         _linkContracts();
         _seedAndApprove();
         _assertSetupInvariants();
@@ -134,23 +144,30 @@ abstract contract LAWPTestBase is Test {
         mockMultiSig = new MockMultiSig(address(engine));
     }
 
+    /// @dev Deploys the ContributionPool. Engine and cNGN must be deployed first.
+    ///      The pool owner is `admin`, matching the other protocol contracts.
+    function _deployContributionPool() internal {
+        contributionPool = new LAWPContributionPool(address(cngn), admin);
+    }
+
     function _linkContracts() internal {
         vm.startPrank(admin);
         engine.setMultiSigController(address(mockMultiSig));
         yieldVault.setComplianceEngine(address(engine));
         operationalVault.setComplianceEngine(address(engine));
         impactToken.setComplianceEngine(address(engine));
+        contributionPool.setComplianceEngine(address(engine));
         vm.stopPrank();
     }
 
     function _seedAndApprove() internal {
-        // Coordinator is the sole fund provider for ALL protocol flows.
+        // Coordinator is the sole fund provider for ALL direct protocol flows.
         // ONE approval to the ENGINE covers both deposit and revenue routing.
         cngn.mintTest(coordinator, SEED_AMOUNT);
         vm.prank(coordinator);
         cngn.approve(address(engine), type(uint256).max);
 
-        // Users for direct deposit/claim tests
+        // Users for contribution pool flows - they approve the POOL, not the engine.
         cngn.mintTest(userA, SEED_AMOUNT);
         cngn.mintTest(userB, SEED_AMOUNT);
         cngn.mintTest(userC, SEED_AMOUNT);
@@ -160,6 +177,14 @@ abstract contract LAWPTestBase is Test {
         // Only vaults hold protocol cNGN
         assertEq(cngn.balanceOf(address(mockMultiSig)), 0, "MockMultiSig must hold zero cNGN");
         assertEq(cngn.balanceOf(address(engine)), 0, "Engine must hold zero cNGN");
+        // ContributionPool starts empty
+        assertEq(
+            cngn.balanceOf(address(contributionPool)),
+            0,
+            "ContributionPool must hold zero cNGN at deploy"
+        );
+        // Pool counter starts at 1
+        assertEq(contributionPool.poolCount(), 1, "ContributionPool poolCount must start at 1");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -217,5 +242,39 @@ abstract contract LAWPTestBase is Test {
 
     function _netCapital(uint256 gross) internal pure returns (uint256) {
         return gross - (gross * 1000) / 10_000;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       CONTRIBUTION POOL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Creates a standard contribution pool via the base contributionPool fixture.
+    ///         PoolId starts at 1 (constructor sets poolCount = 1).
+    /// @param _enginePoolId  The engine-level poolId forwarded at settlement.
+    /// @param _goal          Minimum gross cNGN required.
+    /// @param _startTime     Window open timestamp.
+    /// @param _endTime       Window close timestamp.
+    function _createContribPool(
+        uint256 _enginePoolId,
+        uint256 _goal,
+        uint256 _startTime,
+        uint256 _endTime
+    ) internal returns (uint256 poolId) {
+        vm.prank(admin);
+        poolId = contributionPool.createPool(_enginePoolId, _goal, _startTime, _endTime);
+    }
+
+    /// @notice Approves the contribution pool and contributes on behalf of `_user`.
+    function _contribute(address _user, uint256 _poolId, uint256 _amount) internal {
+        vm.prank(_user);
+        cngn.approve(address(contributionPool), _amount);
+        vm.prank(_user);
+        contributionPool.contribute(_poolId, _amount);
+    }
+
+    /// @notice Admin settles a contribution pool (onlyOwner).
+    function _settlePool(uint256 _poolId) internal {
+        vm.prank(admin);
+        contributionPool.settle(_poolId);
     }
 }
