@@ -195,9 +195,9 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         uint256 yieldBefore = cngn.balanceOf(address(yieldVault));
         uint256 opBefore = cngn.balanceOf(address(operationalVault));
 
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, gross, c, b);
+        engine.processPoolDeposit(1, gross, c, w);
 
         // Full gross amount routed to operationalVault in a single transfer.
         // yieldVault receives nothing at deposit time.
@@ -216,7 +216,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         // Token minted to userA with full net capital
         LAWPStructs.TokenData memory data = impactToken.getTokenData(1);
         assertEq(data.netPrincipal, expectedNet);
-        assertEq(data.poolShareBPS, 10_000);
+        assertEq(data.poolShareWAD, 1e18);
         assertEq(data.poolId, 1);
 
         // MockMultiSig + engine hold zero
@@ -230,19 +230,19 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         c[0] = userA;
         c[1] = userB;
         c[2] = userC;
-        uint256[] memory b = new uint256[](3);
-        b[0] = 3333;
-        b[1] = 3333;
-        b[2] = 3334;
+        uint256[] memory w = new uint256[](3);
+        w[0] = 3e17;
+        w[1] = 3e17;
+        w[2] = 4e17;
 
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, gross, c, b);
+        engine.processPoolDeposit(1, gross, c, w);
 
-        // A & B: 90_000 * 3333 / 10_000 = 29_997e6
-        assertEq(impactToken.getTokenData(1).netPrincipal, 29_997e6);
-        assertEq(impactToken.getTokenData(2).netPrincipal, 29_997e6);
-        // C gets remainder = 90_000 - 29_997 - 29_997 = 30_006e6
-        assertEq(impactToken.getTokenData(3).netPrincipal, 30_006e6);
+        // A & B: 90_000e6 * 3e17 / 1e18 = 27_000e6
+        assertEq(impactToken.getTokenData(1).netPrincipal, 27_000e6);
+        assertEq(impactToken.getTokenData(2).netPrincipal, 27_000e6);
+        // C gets remainder = 90_000 - 27_000 - 27_000 = 36_000e6
+        assertEq(impactToken.getTokenData(3).netPrincipal, 36_000e6);
     }
 
     function test_ProcessPoolDeposit_MintsSequentialTokenIds() public {
@@ -255,64 +255,64 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         vm.prank(admin);
         engine.emergencyPause();
 
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
         vm.expectRevert();
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_PoolAlreadyExists() public {
         _setupStandardDeposit();
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_PoolAlreadyExists.selector);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_ZeroAmount() public {
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidAmount.selector);
-        engine.processPoolDeposit(1, 0, c, b);
+        engine.processPoolDeposit(1, 0, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_ArrayMismatch() public {
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
-        uint256[] memory b = new uint256[](1);
-        b[0] = 10_000;
+        uint256[] memory w = new uint256[](1);
+        w[0] = 1e18;
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ArrayMismatch.selector);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_EmptyArray() public {
         address[] memory c = new address[](0);
-        uint256[] memory b = new uint256[](0);
+        uint256[] memory w = new uint256[](0);
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ArrayMismatch.selector);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_TooManyContributors() public {
         address[] memory c = new address[](21);
-        uint256[] memory b = new uint256[](21);
+        uint256[] memory w = new uint256[](21);
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ArrayTooLarge.selector);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
-    function test_ProcessPoolDeposit_RevertIf_InvalidBPS() public {
+    function test_ProcessPoolDeposit_RevertIf_InvalidWAD() public {
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
-        uint256[] memory b = new uint256[](2);
-        b[0] = 5000; // Sums to 9999, not 10000
-        b[1] = 4999;
+        uint256[] memory w = new uint256[](2);
+        w[0] = 5e17; // Sums to 9e17, not 1e18
+        w[1] = 4e17;
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidBPS.selector);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -447,9 +447,9 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_ProcessPoolDeposit_WritesPoolTotalPrincipal() public {
         uint256 gross = 100_000e6;
         uint256 expectedNet = 90_000e6; // 10% risk fee
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, gross, c, b);
+        engine.processPoolDeposit(1, gross, c, w);
         assertEq(engine.poolTotalPrincipal(1), expectedNet);
     }
 
@@ -535,7 +535,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         // Route GRANT_INITIAL: 10_000e6 -> 3_000e6 collective yield
         _setupGrantInitial(10_000e6);
 
-        // Token 1 = userA, 60% BPS -> 3_000 * 6000 / 10_000 = 1_800e6 yield
+        // Token 1 = userA, 60% WAD -> 3_000 * 6e17 / 1e18 = 1_800e6 yield
         assertEq(engine.calculateProportionalYield(1), 1_800e6);
 
         uint256 balBefore = cngn.balanceOf(userA);
@@ -549,13 +549,13 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
     function test_ClaimYield_RoC_CappedAtPrincipal() public {
         // Standard deposit: gross=100_000e6, risk=10%, net=90_000e6.
-        // userA token 1: BPS=6000, netPrincipal=54_000e6
-        // userB token 2: BPS=4000, netPrincipal=36_000e6
+        // userA token 1: WAD=6e17, netPrincipal=54_000e6
+        // userB token 2: WAD=4e17, netPrincipal=36_000e6
         _setupStandardDeposit();
 
         // Route the full net capital as RoC - maximum allowed by the guard.
         // poolRocTracker = 90_000e6
-        // userA's tracker share = 90_000e6 * 6000 / 10_000 = 54_000e6
+        // userA's tracker share = 90_000e6 * 6e17 / 1e18 = 54_000e6
         // maxRemainingRoc for userA = netPrincipal - rocReturned = 54_000e6 - 0 = 54_000e6
         // claimableRoc = min(54_000e6, 54_000e6) = 54_000e6
         // This proves the claim-math cap is reached exactly at the principal boundary.
@@ -684,21 +684,21 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
     function test_PoolReplay_CannotDepositTwice() public {
         _setupStandardDeposit();
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_PoolAlreadyExists.selector);
-        engine.processPoolDeposit(1, 50_000e6, c, b);
+        engine.processPoolDeposit(1, 50_000e6, c, w);
     }
 
     function test_ZeroAddress_CannotBeContributor() public {
         address[] memory c = new address[](1);
         c[0] = address(0);
-        uint256[] memory b = new uint256[](1);
-        b[0] = 10_000;
+        uint256[] memory w = new uint256[](1);
+        w[0] = 1e18;
         vm.prank(coordinator);
         // ERC721 mint to address(0) reverts
         vm.expectRevert();
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_VaultBalancesNeverDecreaseOnDeposit() public {
@@ -730,10 +730,10 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         // Configure coordinator as an external sender (triggers the burn path).
         adminOps.setExternalWhitelisted(coordinator, true);
 
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ZeroActualReceived.selector);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     /// @notice Verifies that balance-delta accounting correctly uses actual received
@@ -744,9 +744,9 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_ProcessPoolDeposit_AccountingUsesActualReceived() public {
         uint256 gross = 100_000e6;
 
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, gross, c, b);
+        engine.processPoolDeposit(1, gross, c, w);
 
         // Confirm: actual vault balance == gross (no fee in MockCngn3 standard path).
         assertEq(cngn.balanceOf(address(operationalVault)), gross);
@@ -778,43 +778,43 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
                           FUZZ TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function testFuzz_ProcessPoolDeposit_AccumulatorCorrectness(uint256 grossAmount, uint256 bps1)
+    function testFuzz_ProcessPoolDeposit_AccumulatorCorrectness(uint256 grossAmount, uint256 w1)
         public
     {
         grossAmount = bound(grossAmount, 1e6, 1_000_000e6);
-        bps1 = bound(bps1, 1, 9999);
-        uint256 bps2 = 10_000 - bps1;
+        uint256 expectedNet = grossAmount - (grossAmount * 1000) / 10_000;
+        uint256 minWad = 1e18 / expectedNet + 1;
+        w1 = bound(w1, minWad, 1e18 - minWad);
+        uint256 w2 = 1e18 - w1;
 
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
-        uint256[] memory b = new uint256[](2);
-        b[0] = bps1;
-        b[1] = bps2;
-
-        uint256 expectedNet = grossAmount - (grossAmount * 1000) / 10_000;
+        uint256[] memory w = new uint256[](2);
+        w[0] = w1;
+        w[1] = w2;
 
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, grossAmount, c, b);
+        engine.processPoolDeposit(1, grossAmount, c, w);
 
         uint256 sum =
             impactToken.getTokenData(1).netPrincipal + impactToken.getTokenData(2).netPrincipal;
         assertEq(sum, expectedNet, "Dust conservation: principals must sum to netCapital");
     }
 
-    function testFuzz_BPS_MustSumToTenThousand(uint256 bps1) public {
-        bps1 = bound(bps1, 1, 9999);
-        uint256 bps2 = 10_000 - bps1 - 1; // Intentionally wrong
+    function testFuzz_WAD_MustSumToOneE18(uint256 w1) public {
+        w1 = bound(w1, 1, 1e18 - 1);
+        uint256 w2 = 1e18 - w1 - 1; // Intentionally wrong
 
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
-        uint256[] memory b = new uint256[](2);
-        b[0] = bps1;
-        b[1] = bps2;
+        uint256[] memory w = new uint256[](2);
+        w[0] = w1;
+        w[1] = w2;
 
         vm.prank(coordinator);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidBPS.selector);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 }

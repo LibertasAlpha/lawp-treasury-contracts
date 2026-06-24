@@ -86,7 +86,7 @@ interface ILAWPContributionPool {
 
     /// @notice Opens a new contribution pool slot.
     /// @dev Only callable by the contract owner.
-    ///      Increments the internal poolCount counter and stores per-pool config.
+    ///      Increments the internal nextPoolId counter and stores per-pool config.
     ///      `_maxContributors` must be ≤ 20 to satisfy the ComplianceEngine hard cap.
     /// @param _enginePoolId The poolId that will be passed to processPoolDeposit at settlement.
     ///                      Must not collide with an existing engine pool - enforced by the
@@ -163,5 +163,5 @@ interface ILAWPContributionPool {
     function getContributors(uint256 _poolId) external view returns (address[] memory);
 
     /// @notice Total number of pools ever created (including settled and failed).
-    function poolCount() external view returns (uint256);
+    function nextPoolId() external view returns (uint256);
 }

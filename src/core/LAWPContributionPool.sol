@@ -19,7 +19,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 ///
 ///      DESIGN INVARIANTS:
 ///      1. One contract - many pools.
-///         Uses a poolCount counter + mapping pattern to store per-pool config and state,
+///         Uses a nextPoolId counter + mapping pattern to store per-pool config and state,
 ///         so a single deployment serves all future pools without redeployment cost.
 ///
 ///      2. Protocol-level constants (engine, cNGNToken) are immutable.
@@ -132,7 +132,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Total pools ever created. Used as the next poolId on createPool().
-    uint256 public poolCount;
+    uint256 public nextPoolId;
 
     /// @notice Core configuration and runtime state for each pool.
     mapping(uint256 poolId => PoolConfig) private _pools;
@@ -158,7 +158,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     constructor(address _cNGNToken, address _admin) Ownable(_admin) {
         if (_cNGNToken == address(0)) revert LAWPContributionPool__ZeroAddress();
 
-        poolCount = 1;
+        nextPoolId = 1;
         cNGNToken = IERC20(_cNGNToken);
     }
 
@@ -183,7 +183,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPContributionPool
-    /// @dev Uses poolCount++ (current value assigned, then incremented)
+    /// @dev Uses nextPoolId++ (current value assigned, then incremented)
     function createPool(uint256 _enginePoolId, uint256 _goal, uint256 _startTime, uint256 _endTime)
         external
         override
@@ -198,7 +198,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         }
 
         // Effects
-        poolId = poolCount++;
+        poolId = nextPoolId++;
         _pools[poolId] = PoolConfig({
             enginePoolId: _enginePoolId,
             goal: _goal,
@@ -219,7 +219,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     ///      ineligible for future contributions and eligible for refund queries (though
     ///      with zero raised, no refunds will be exercised).
     function cancelPool(uint256 _poolId) external override onlyOwner {
-        if (_poolId >= poolCount) revert LAWPContributionPool__InvalidPool();
+        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
 
         PoolConfig storage pool = _pools[_poolId];
         if (pool.status != PoolStatus.Open) revert LAWPContributionPool__PoolNotOpen();
@@ -255,7 +255,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         // Checks
         if (_amount < MIN_CONTRIBUTION) revert LAWPContributionPool__ContributionTooSmall();
 
-        if (_poolId >= poolCount) revert LAWPContributionPool__InvalidPool();
+        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
 
         PoolConfig storage pool = _pools[_poolId];
         if (pool.status != PoolStatus.Open) revert LAWPContributionPool__PoolNotOpen();
@@ -306,7 +306,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     ///      than 1 quintillionth of the pool rounds to 0 - economically impossible.
     function settle(uint256 _poolId) external override onlyOwner nonReentrant {
         // Checks
-        if (_poolId >= poolCount) revert LAWPContributionPool__InvalidPool();
+        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
 
         PoolConfig storage pool = _pools[_poolId];
         if (pool.status != PoolStatus.Open) revert LAWPContributionPool__AlreadySettled();
@@ -386,7 +386,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     ///      observing a non-zero amount and claiming twice.
     function claimRefund(uint256 _poolId) external override nonReentrant {
         // Checks
-        if (_poolId >= poolCount) revert LAWPContributionPool__InvalidPool();
+        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
 
         PoolConfig storage pool = _pools[_poolId];
 
@@ -422,7 +422,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
 
     /// @inheritdoc ILAWPContributionPool
     function getPool(uint256 _poolId) external view override returns (PoolConfig memory) {
-        if (_poolId >= poolCount) revert LAWPContributionPool__InvalidPool();
+        if (_poolId == 0 || _poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
         return _pools[_poolId];
     }
 
@@ -433,13 +433,13 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         override
         returns (ContributionRecord memory)
     {
-        if (_poolId >= poolCount) revert LAWPContributionPool__InvalidPool();
+        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
         return _contributions[_poolId][_contributor];
     }
 
     /// @inheritdoc ILAWPContributionPool
     function getContributors(uint256 _poolId) external view override returns (address[] memory) {
-        if (_poolId >= poolCount) revert LAWPContributionPool__InvalidPool();
+        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
         return _contributorLists[_poolId];
     }
 }

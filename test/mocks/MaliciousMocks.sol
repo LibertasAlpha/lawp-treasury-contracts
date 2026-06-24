@@ -23,11 +23,11 @@ contract MaliciousRelayer {
         uint256 _poolId,
         uint256 _amount,
         address[] calldata _contributors,
-        uint256[] calldata _bpsShares
+        uint256[] calldata _wadShares
     ) external {
-        engine.processPoolDeposit(_poolId, _amount, _contributors, _bpsShares);
+        engine.processPoolDeposit(_poolId, _amount, _contributors, _wadShares);
         // Second call must revert - PoolAlreadyExists
-        engine.processPoolDeposit(_poolId, _amount, _contributors, _bpsShares);
+        engine.processPoolDeposit(_poolId, _amount, _contributors, _wadShares);
     }
 }
 

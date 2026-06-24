@@ -14,7 +14,7 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 ///      so the engine linkage is already correct.
 ///
 ///      KEY BEHAVIOURAL DIFFERENCES vs. the original draft:
-///        1. poolCount starts at 1 - first pool created returns id = 1.
+///        1. nextPoolId starts at 1 - first pool created returns id = 1.
 ///        2. createPool() has NO maxContributors param - capacity is always MAX_CONTRIBUTORS (20).
 ///        3. settle() is onlyOwner, not permissionless.
 ///        4. Events are defined on the contract, not the interface - emit using
@@ -75,8 +75,8 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         assertEq(address(contributionPool.complianceEngine()), address(engine));
         assertEq(address(contributionPool.cNGNToken()), address(cngn));
         assertEq(contributionPool.owner(), admin);
-        // poolCount initialised to 1 by constructor
-        assertEq(contributionPool.poolCount(), 1);
+        // nextPoolId initialised to 1 by constructor
+        assertEq(contributionPool.nextPoolId(), 1);
     }
 
     function test_Constructor_RevertIf_ZeroCngn() public {
@@ -123,7 +123,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         uint256 poolId = contributionPool.createPool(ENGINE_POOL_ID, GOAL, startTime, endTime);
 
         assertEq(poolId, 1);
-        assertEq(contributionPool.poolCount(), 2);
+        assertEq(contributionPool.nextPoolId(), 2);
 
         ILAWPContributionPool.PoolConfig memory cfg = contributionPool.getPool(1);
         assertEq(cfg.enginePoolId, ENGINE_POOL_ID);
@@ -141,7 +141,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         assertEq(contributionPool.createPool(2, GOAL, startTime, endTime), 2);
         assertEq(contributionPool.createPool(3, GOAL, startTime, endTime), 3);
         vm.stopPrank();
-        assertEq(contributionPool.poolCount(), 4);
+        assertEq(contributionPool.nextPoolId(), 4);
     }
 
     function test_CreatePool_RevertIf_NotOwner() public {
@@ -254,7 +254,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         ILAWPContributionPool.ContributionRecord memory rec =
             contributionPool.getContribution(poolId, userA);
         assertEq(rec.amount, CONTRIBUTION_A);
-        assertEq(rec.bpsShare, 0); // not computed until settle()
+        assertEq(rec.wadShare, 0); // not computed until settle()
         assertFalse(rec.refundClaimed);
     }
 
@@ -834,7 +834,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
     //////////////////////////////////////////////////////////////*/
 
     function test_GetPool_RevertIf_InvalidId() public view {
-        // poolCount = 1 at deploy; id 0 is below the starting counter.
+        // nextPoolId = 1 at deploy; id 0 is below the starting counter.
         bool reverted;
         try contributionPool.getPool(0) returns (ILAWPContributionPool.PoolConfig memory) {
             reverted = false;

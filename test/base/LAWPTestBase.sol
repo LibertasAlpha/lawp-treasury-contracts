@@ -18,7 +18,7 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 /// @dev TOKEN FLOW ARCHITECTURE (enforced in setUp):
 ///
 ///      processPoolDeposit (deposit flow):
-///        coordinator -> engine.processPoolDeposit(poolId, gross, contributors, bps)
+///        coordinator -> engine.processPoolDeposit(poolId, gross, contributors, wads)
 ///        engine does: operationalTreasuryWallet = registry.operationalTreasuryWallet()
 ///                     operationalBalances[operationalTreasuryWallet] += riskFee (if > 0)
 ///                     operationalBalances[operationalTreasuryWallet] += netCapital
@@ -34,7 +34,7 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
 ///      contributionPool (pool contribution flow):
 ///        users -> contributionPool.contribute(poolId, amount)
 ///        admin  -> contributionPool.settle(poolId)  [onlyOwner]
-///        contributionPool -> engine.processPoolDeposit(enginePoolId, totalRaised, contributors, bpsShares)
+///        contributionPool -> engine.processPoolDeposit(enginePoolId, totalRaised, contributors, wadShares)
 ///        Approval needed: users -> approve CONTRIBUTION_POOL
 ///                         contributionPool -> approves ENGINE (set/cleared inside settle())
 ///
@@ -184,7 +184,7 @@ abstract contract LAWPTestBase is Test {
             "ContributionPool must hold zero cNGN at deploy"
         );
         // Pool counter starts at 1
-        assertEq(contributionPool.poolCount(), 1, "ContributionPool poolCount must start at 1");
+        assertEq(contributionPool.nextPoolId(), 1, "ContributionPool nextPoolId must start at 1");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -196,17 +196,17 @@ abstract contract LAWPTestBase is Test {
     ///         operationalBalances[operationalTreasuryWallet]:
     ///           riskFee component  = 10_000e6
     ///           netCapital component = 90_000e6
-    ///         Token 1 -> userA: netPrincipal=54_000e6, BPS=6000
-    ///         Token 2 -> userB: netPrincipal=36_000e6, BPS=4000
+    ///         Token 1 -> userA: netPrincipal=54_000e6, WAD=6e17
+    ///         Token 2 -> userB: netPrincipal=36_000e6, WAD=4e17
     function _setupStandardDeposit() internal {
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
-        uint256[] memory b = new uint256[](2);
-        b[0] = 6000;
-        b[1] = 4000;
+        uint256[] memory w = new uint256[](2);
+        w[0] = 6e17;
+        w[1] = 4e17;
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     /// @notice Routes revenue through MockMultiSig. Coordinator is fund provider.
@@ -232,12 +232,12 @@ abstract contract LAWPTestBase is Test {
     function _singleContributor(address user)
         internal
         pure
-        returns (address[] memory c, uint256[] memory b)
+        returns (address[] memory c, uint256[] memory w)
     {
         c = new address[](1);
         c[0] = user;
-        b = new uint256[](1);
-        b[0] = 10_000;
+        w = new uint256[](1);
+        w[0] = 1e18;
     }
 
     function _netCapital(uint256 gross) internal pure returns (uint256) {
@@ -249,7 +249,7 @@ abstract contract LAWPTestBase is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Creates a standard contribution pool via the base contributionPool fixture.
-    ///         PoolId starts at 1 (constructor sets poolCount = 1).
+    ///         PoolId starts at 1 (constructor sets nextPoolId = 1).
     /// @param _enginePoolId  The engine-level poolId forwarded at settlement.
     /// @param _goal          Minimum gross cNGN required.
     /// @param _startTime     Window open timestamp.

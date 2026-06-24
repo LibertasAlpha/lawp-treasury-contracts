@@ -21,7 +21,7 @@ contract LAWPImpactTokenTest is Test {
     address public nobody = address(99);
 
     event ImpactTokenMinted(
-        uint256 indexed tokenId, address indexed to, uint256 netPrincipal, uint256 poolShareBPS
+        uint256 indexed tokenId, address indexed to, uint256 netPrincipal, uint256 poolShareWAD
     );
     event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
     event BaseURIUpdated(string oldURI, string newURI);
@@ -99,7 +99,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_Mint_OnlyEngine() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
 
         assertEq(tokenId, 1);
         assertEq(token.ownerOf(1), userA);
@@ -108,9 +108,9 @@ contract LAWPImpactTokenTest is Test {
 
     function test_Mint_ReturnsSequentialTokenIds() public {
         vm.startPrank(address(mockEngine));
-        uint256 id1 = token.mint(userA, 54_000e6, 6000, 1);
-        uint256 id2 = token.mint(userB, 36_000e6, 4000, 1);
-        uint256 id3 = token.mint(userA, 45_000e6, 10_000, 2);
+        uint256 id1 = token.mint(userA, 54_000e6, 6e17, 1);
+        uint256 id2 = token.mint(userB, 36_000e6, 4e17, 1);
+        uint256 id3 = token.mint(userA, 45_000e6, 1e18, 2);
         vm.stopPrank();
 
         assertEq(id1, 1);
@@ -120,56 +120,56 @@ contract LAWPImpactTokenTest is Test {
 
     function test_Mint_StoresTokenDataCorrectly() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 54_000e6, 6000, 1);
+        uint256 tokenId = token.mint(userA, 54_000e6, 6e17, 1);
 
         LAWPStructs.TokenData memory data = token.getTokenData(tokenId);
         assertEq(data.netPrincipal, 54_000e6);
         assertEq(data.rocReturned, 0);
-        assertEq(data.poolShareBPS, 6000);
+        assertEq(data.poolShareWAD, 6e17);
         assertEq(data.poolId, 1);
     }
 
     function test_Mint_EmitsImpactTokenMinted() public {
         vm.prank(address(mockEngine));
         vm.expectEmit(true, true, false, true);
-        emit ImpactTokenMinted(1, userA, 90_000e6, 10_000);
-        token.mint(userA, 90_000e6, 10_000, 1);
+        emit ImpactTokenMinted(1, userA, 90_000e6, 1e18);
+        token.mint(userA, 90_000e6, 1e18, 1);
     }
 
     function test_Mint_RevertIf_NotEngine() public {
         vm.prank(nobody);
         vm.expectRevert(LAWPImpactToken.LAWPImpactToken_UnauthorizedCaller.selector);
-        token.mint(userA, 90_000e6, 10_000, 1);
+        token.mint(userA, 90_000e6, 1e18, 1);
     }
 
     function test_Mint_RevertIf_ZeroAddress() public {
         vm.prank(address(mockEngine));
         vm.expectRevert(LAWPImpactToken.LAWPImpactToken_ZeroAddressMint.selector);
-        token.mint(address(0), 90_000e6, 10_000, 1);
+        token.mint(address(0), 90_000e6, 1e18, 1);
     }
 
     function test_Mint_RevertIf_ZeroPrincipal() public {
         vm.prank(address(mockEngine));
         vm.expectRevert(LAWPImpactToken.LAWPImpactToken_InvalidPrincipal.selector);
-        token.mint(userA, 0, 10_000, 1);
+        token.mint(userA, 0, 1e18, 1);
     }
 
-    function test_Mint_RevertIf_ZeroBPS() public {
+    function test_Mint_RevertIf_ZeroWAD() public {
         vm.prank(address(mockEngine));
-        vm.expectRevert(LAWPImpactToken.LAWPImpactToken_InvalidBPS.selector);
+        vm.expectRevert(LAWPImpactToken.LAWPImpactToken_InvalidShare.selector);
         token.mint(userA, 90_000e6, 0, 1);
     }
 
-    function test_Mint_RevertIf_BPSExceedsMax() public {
+    function test_Mint_RevertIf_WADExceedsMax() public {
         vm.prank(address(mockEngine));
-        vm.expectRevert(LAWPImpactToken.LAWPImpactToken_InvalidBPS.selector);
-        token.mint(userA, 90_000e6, 10_001, 1);
+        vm.expectRevert(LAWPImpactToken.LAWPImpactToken_InvalidShare.selector);
+        token.mint(userA, 90_000e6, 1e18 + 1, 1);
     }
 
     function test_Mint_RevertIf_ZeroPoolId() public {
         vm.prank(address(mockEngine));
         vm.expectRevert(LAWPImpactToken.LAWPImpactToken_InvalidPoolId.selector);
-        token.mint(userA, 90_000e6, 10_000, 0);
+        token.mint(userA, 90_000e6, 1e18, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -178,7 +178,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_UpdateRocReturned_Success() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
 
         vm.prank(address(mockEngine));
         token.updateRocReturned(tokenId, 45_000e6);
@@ -189,7 +189,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_UpdateRocReturned_Cumulative() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
 
         vm.startPrank(address(mockEngine));
         token.updateRocReturned(tokenId, 30_000e6);
@@ -201,7 +201,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_UpdateRocReturned_ExactCap_Succeeds() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
 
         vm.prank(address(mockEngine));
         token.updateRocReturned(tokenId, 90_000e6); // Exactly at cap - must succeed
@@ -210,7 +210,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_UpdateRocReturned_RevertIf_ExceedsCap() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
 
         vm.prank(address(mockEngine));
         vm.expectRevert(LAWPImpactToken.LAWPImpactToken_ExceedsPrincipalCap.selector);
@@ -219,7 +219,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_UpdateRocReturned_RevertIf_ZeroAmount() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
 
         vm.prank(address(mockEngine));
         vm.expectRevert(LAWPImpactToken.LAWPImpactToken_InvalidRocAmount.selector);
@@ -228,7 +228,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_UpdateRocReturned_RevertIf_NotEngine() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
 
         vm.prank(nobody);
         vm.expectRevert(LAWPImpactToken.LAWPImpactToken_UnauthorizedCaller.selector);
@@ -242,14 +242,14 @@ contract LAWPImpactTokenTest is Test {
     function test_TransferHook_DoesNotFireOnMint() public {
         // Minting: from == address(0) - hook must not fire
         vm.prank(address(mockEngine));
-        token.mint(userA, 90_000e6, 10_000, 1);
+        token.mint(userA, 90_000e6, 1e18, 1);
 
         assertFalse(mockEngine.claimYieldCalled(), "Hook must NOT fire on mint");
     }
 
     function test_TransferHook_DoesNotFireWhenNoYieldPending() public {
         vm.prank(address(mockEngine));
-        token.mint(userA, 90_000e6, 10_000, 1);
+        token.mint(userA, 90_000e6, 1e18, 1);
 
         // pendingYield == 0 -> hook must silently skip
         mockEngine.setPendingYield(0);
@@ -263,7 +263,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_TransferHook_FiresWhenYieldPending() public {
         vm.prank(address(mockEngine));
-        token.mint(userA, 90_000e6, 10_000, 1);
+        token.mint(userA, 90_000e6, 1e18, 1);
 
         mockEngine.setPendingYield(5_000e6); // Simulate pending yield
 
@@ -280,7 +280,7 @@ contract LAWPImpactTokenTest is Test {
 
     function test_TokenURI_ReturnsBaseURI() public {
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, 90_000e6, 10_000, 1);
+        uint256 tokenId = token.mint(userA, 90_000e6, 1e18, 1);
         assertEq(token.tokenURI(tokenId), "ipfs://lawp-base/");
     }
 
@@ -317,22 +317,22 @@ contract LAWPImpactTokenTest is Test {
     function testFuzz_Mint_ValidParameters(
         address to,
         uint256 principal,
-        uint256 bps,
+        uint256 wad,
         uint256 poolId
     ) public {
         vm.assume(to != address(0));
-        bps = bound(bps, 1, 10_000);
+        wad = bound(wad, 1, 1e18);
         principal = bound(principal, 1, type(uint128).max);
         poolId = bound(poolId, 1, type(uint128).max);
 
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(to, principal, bps, poolId);
+        uint256 tokenId = token.mint(to, principal, wad, poolId);
 
         assertGt(tokenId, 0);
         assertEq(token.ownerOf(tokenId), to);
         LAWPStructs.TokenData memory data = token.getTokenData(tokenId);
         assertEq(data.netPrincipal, principal);
-        assertEq(data.poolShareBPS, bps);
+        assertEq(data.poolShareWAD, wad);
         assertEq(data.poolId, poolId);
     }
 
@@ -343,7 +343,7 @@ contract LAWPImpactTokenTest is Test {
         rocAmount = bound(rocAmount, 1, principal);
 
         vm.prank(address(mockEngine));
-        uint256 tokenId = token.mint(userA, principal, 10_000, 1);
+        uint256 tokenId = token.mint(userA, principal, 1e18, 1);
 
         vm.prank(address(mockEngine));
         token.updateRocReturned(tokenId, rocAmount);

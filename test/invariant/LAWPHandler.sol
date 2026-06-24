@@ -89,9 +89,9 @@ contract LAWPHandler is Test {
     ///         Used by Invariant L to verify that principal is immutable post-mint.
     mapping(uint256 tokenId => uint256 principal) public ghost_tokenPrincipalSnapshot;
 
-    /// @notice Records each token's poolShareBPS at the moment of minting.
-    ///         Used by Invariant L to verify that BPS is immutable post-mint.
-    mapping(uint256 tokenId => uint256 bps) public ghost_tokenBPSSnapshot;
+    /// @notice Records each token's poolShareWAD at the moment of minting.
+    ///         Used by Invariant L to verify that WAD is immutable post-mint.
+    mapping(uint256 tokenId => uint256 wad) public ghost_tokenWADSnapshot;
 
     /// @notice Snapshots of rocReturned BEFORE each claimYield/transfer call.
     ///         Used to enforce Invariant P (RoC can only increase, never decrease).
@@ -208,8 +208,8 @@ contract LAWPHandler is Test {
     /// @notice Simulates an investor pool deposit by the relayer.
     ///
     /// @dev WHAT HAPPENS ON-CHAIN:
-    ///      engine.processPoolDeposit(poolId, grossAmount, contributors, bps)
-    ///        - Validates BPS array sums to 10_000
+    ///      engine.processPoolDeposit(poolId, grossAmount, contributors, wads)
+    ///        - Validates WAD array sums to 1e18
     ///        - Computes riskFee = grossAmount * 10% -> operationalVault
     ///        - Transfers netCapital (grossAmount - riskFee) -> yieldVault
     ///        - Mints one ERC-721 token per contributor
@@ -219,7 +219,7 @@ contract LAWPHandler is Test {
     ///
     /// @dev GHOST UPDATES:
     ///      Records gross, net, and vault inflows for Conservation Invariant M.
-    ///      Snapshots each new token's principal and BPS for Immutability Invariant L.
+    ///      Snapshots each new token's principal and WAD for Immutability Invariant L.
     ///
     /// @param seedAmount    Raw fuzz input - clamped to [10_000e6, 1_000_000e6].
     /// @param userCountSeed Raw fuzz input - clamped to [1, 5] contributors.
@@ -228,28 +228,28 @@ contract LAWPHandler is Test {
         uint256 amount = bound(seedAmount, 10_000e6, 1_000_000e6);
         uint256 userCount = bound(userCountSeed, 1, 5);
 
-        // 2. Build valid contributor + BPS arrays
-        // Strategy: halve the remaining BPS for each contributor; the last one
-        // gets all remainder. This guarantees sum == 10_000 regardless of count.
+        // 2. Build valid contributor + WAD arrays
+        // Strategy: halve the remaining WAD for each contributor; the last one
+        // gets all remainder. This guarantees sum == 1e18 regardless of count.
         address[] memory users = new address[](userCount);
-        uint256[] memory bps = new uint256[](userCount);
+        uint256[] memory wads = new uint256[](userCount);
 
-        uint256 bpsRemaining = 10_000;
+        uint256 wadsRemaining = 1e18;
         for (uint256 i = 0; i < userCount - 1; i++) {
             users[i] = activeUsers[i];
-            uint256 share = bpsRemaining / 2;
-            bps[i] = share;
-            bpsRemaining -= share;
+            uint256 share = wadsRemaining / 2;
+            wads[i] = share;
+            wadsRemaining -= share;
         }
         users[userCount - 1] = activeUsers[userCount - 1];
-        bps[userCount - 1] = bpsRemaining; // Dust assignment - guaranteed sum == 10_000
+        wads[userCount - 1] = wadsRemaining; // Dust assignment - guaranteed sum == 1e18
 
         // 3. Assign unique pool ID and call the protocol
         uint256 poolId = nextPoolId++;
         address relayer = activeUsers[0]; // Stable relayer - pre-approved in constructor
 
         vm.prank(relayer);
-        engine.processPoolDeposit(poolId, amount, users, bps);
+        engine.processPoolDeposit(poolId, amount, users, wads);
 
         // 4. Update tracking arrays
         activePools.push(poolId);
@@ -277,11 +277,11 @@ contract LAWPHandler is Test {
                 "Handler: Token not minted - sequential ID assumption violated"
             );
 
-            // Snapshot the token's principal and BPS at the moment of creation.
+            // Snapshot the token's principal and WAD at the moment of creation.
             // Invariant L will compare current state to these snapshots.
             LAWPStructs.TokenData memory data = impactToken.getTokenData(tokenId);
             ghost_tokenPrincipalSnapshot[tokenId] = data.netPrincipal;
-            ghost_tokenBPSSnapshot[tokenId] = data.poolShareBPS;
+            ghost_tokenWADSnapshot[tokenId] = data.poolShareWAD;
 
             activeTokens.push(tokenId);
         }
@@ -308,7 +308,7 @@ contract LAWPHandler is Test {
     ///      2. Up to 5 users contribute equal shares
     ///      3. vm.warp(endTime + 1)
     ///      4. admin calls contributionPool.settle(poolId)
-    ///         - settle builds bpsShares[], calls engine.processPoolDeposit
+    ///         - settle builds wadShares[], calls engine.processPoolDeposit
     ///         - engine mints Impact Tokens and records the pool
     ///
     /// @dev GHOST UPDATES:
@@ -374,7 +374,7 @@ contract LAWPHandler is Test {
             );
             LAWPStructs.TokenData memory data = impactToken.getTokenData(tokenId);
             ghost_tokenPrincipalSnapshot[tokenId] = data.netPrincipal;
-            ghost_tokenBPSSnapshot[tokenId] = data.poolShareBPS;
+            ghost_tokenWADSnapshot[tokenId] = data.poolShareWAD;
             activeTokens.push(tokenId);
         }
 
@@ -512,8 +512,8 @@ contract LAWPHandler is Test {
     ///
     /// @dev WHAT HAPPENS ON-CHAIN:
     ///      engine.claimYield(_tokenId)
-    ///        - Computes claimable yield: (poolYieldTracker * BPS / 10_000) - yieldClaimed
-    ///        - Computes claimable RoC:   (poolRocTracker * BPS / 10_000) - rocReturned,
+    ///        - Computes claimable yield: (poolYieldTracker * WAD / 1e18) - yieldClaimed
+    ///        - Computes claimable RoC:   (poolRocTracker * WAD / 1e18) - rocReturned,
     ///          capped at principal
     ///        - Effects: updates yieldClaimed and rocReturned BEFORE transfer (CEI)
     ///        - Interaction: yieldVault.executeTransfer(owner, totalClaim)

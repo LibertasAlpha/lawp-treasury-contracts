@@ -27,14 +27,14 @@ import { LAWPStructs } from "../../src/libraries/LAWPStructs.sol";
  * @dev INVARIANT CATALOGUE:
  *      A  RoC Ceiling              - investors never get back more than put in
  *      B  YieldVault Solvency      - vault can always pay all yield obligations
- *      C  Dust Conservation        - BPS split never loses or creates a wei
+ *      C  Dust Conservation        - WAD split never loses or creates a wei
  *      E  No Ghost Tokens          - every NFT has a real owner, pool, capital
  *      G  Tracker Sync             - on-chain accumulators match ghost state
  *      H  No Negative Yield        - claimed yield ≤ routed yield
  *      I  Zero Custody             - engine + multiSig never hold cNGN
  *      J  OpVault Solvency         - opVault can cover all ledger obligations
  *      K  Accumulator Monotonicity - yield/RoC trackers only ever increase
- *      L  Token Data Immutability  - principal and BPS never change post-mint
+ *      L  Token Data Immutability  - principal and WAD never change post-mint
  *      M  cNGN Conservation Law    - no cNGN is created or destroyed
  *      N  Yield Math Correctness   - claimable yield ≤ mathematical upper bound
  *      O  Pool Uniqueness          - a poolId registered once stays registered
@@ -148,7 +148,7 @@ contract LAWPInvariantsTest is Test {
     /// @dev WHY IT MATTERS:
     ///      The RoC (Return of Contribution) mechanism routes off-chain revenue
     ///      back to investors. But this must be capped at each token's `netPrincipal`.
-    ///      A bug in the cap logic or the poolRocTracker * BPS math could allow
+    ///      A bug in the cap logic or the poolRocTracker * WAD math could allow
     ///      over-distribution - essentially stealing from the vault.
     ///
     ///      PER-TOKEN CHECK: rocReturned ≤ netPrincipal
@@ -226,14 +226,14 @@ contract LAWPInvariantsTest is Test {
     ///
     /// @dev WHY IT MATTERS:
     ///      Solidity integer division truncates. With N contributors splitting
-    ///      a net capital of X, each gets floor(X * BPS / 10_000). The dust
+    ///      a net capital of X, each gets floor(X * WAD / 1e18). The dust
     ///      (rounding remainder) must be absorbed by the last contributor,
     ///      not lost. If the sum is less than netCapital, cNGN is locked in
     ///      the vault forever with no owner. If greater, cNGN is conjured.
     ///
     ///      FOR EACH POOL:
     ///        sum(token.netPrincipal) == ghost_poolNetDeposits[poolId]
-    ///        sum(token.poolShareBPS) == 10_000
+    ///        sum(token.poolShareWAD) == 1e18
     function invariant_C_DustConservation() public view {
         uint256 poolLen = handler.activePoolsLength();
         uint256 tokenLen = handler.activeTokensLength();
@@ -241,7 +241,7 @@ contract LAWPInvariantsTest is Test {
         for (uint256 i = 0; i < poolLen; i++) {
             uint256 poolId = handler.activePools(i);
             uint256 sumPrincipal;
-            uint256 sumBPS;
+            uint256 sumWAD;
 
             for (uint256 j = 0; j < tokenLen; j++) {
                 uint256 tokenId = handler.activeTokens(j);
@@ -249,13 +249,13 @@ contract LAWPInvariantsTest is Test {
 
                 if (data.poolId == poolId) {
                     sumPrincipal += data.netPrincipal;
-                    sumBPS += data.poolShareBPS;
+                    sumWAD += data.poolShareWAD;
                 }
             }
 
-            // BPS must sum to exactly 10_000 - no fractional equity is unaccounted
+            // WAD must sum to exactly 1e18 - no fractional equity is unaccounted
             assertEq(
-                sumBPS, 10_000, "Invariant C: BPS total != 10_000 - fractional equity gap detected"
+                sumWAD, 1e18, "Invariant C: WAD total != 1e18 - fractional equity gap detected"
             );
 
             // Principals must sum to exactly the net capital - no dust leak
@@ -490,15 +490,15 @@ contract LAWPInvariantsTest is Test {
     }
 
     // INVARIANT L: Token Data Immutability
-    /// @notice Once an Impact Token is minted, its `netPrincipal` and `poolShareBPS`
+    /// @notice Once an Impact Token is minted, its `netPrincipal` and `poolShareWAD`
     ///         must never change for the lifetime of the token.
     ///
     /// @dev WHY IT MATTERS:
     ///      The O(1) yield formula is:
-    ///        claimableYield = poolYieldTracker * poolShareBPS / 10_000 - yieldClaimed
+    ///        claimableYield = poolYieldTracker * poolShareWAD / 1e18 - yieldClaimed
     ///
-    ///      If poolShareBPS could change AFTER minting, the yield formula would
-    ///      break. An attacker who could inflate their BPS after deposit could
+    ///      If poolShareWAD could change AFTER minting, the yield formula would
+    ///      break. An attacker who could inflate their WAD after deposit could
     ///      claim more yield than their proportional share. Similarly, if
     ///      netPrincipal could change, the RoC cap becomes meaningless.
     ///
@@ -517,9 +517,9 @@ contract LAWPInvariantsTest is Test {
                 "Invariant L: netPrincipal changed post-mint - yield formula compromised"
             );
             assertEq(
-                current.poolShareBPS,
-                handler.ghost_tokenBPSSnapshot(tokenId),
-                "Invariant L: poolShareBPS changed post-mint - proportional claim broken"
+                current.poolShareWAD,
+                handler.ghost_tokenWADSnapshot(tokenId),
+                "Invariant L: poolShareWAD changed post-mint - proportional claim broken"
             );
         }
     }
@@ -567,8 +567,8 @@ contract LAWPInvariantsTest is Test {
     ///
     /// @dev WHY IT MATTERS:
     ///      calculateProportionalYield uses:
-    ///        totalYieldForToken = poolYieldTracker * BPS / 10_000
-    ///        totalRocForToken   = poolRocTracker   * BPS / 10_000
+    ///        totalYieldForToken = poolYieldTracker * WAD / 1e18
+    ///        totalRocForToken   = poolRocTracker   * WAD / 1e18
     ///        claimable          = (totalYieldForToken - yieldClaimed) + min(claimableRoc, cap)
     ///
     ///      A bug that allows claimable to exceed these bounds would mean a
@@ -585,13 +585,13 @@ contract LAWPInvariantsTest is Test {
             LAWPStructs.TokenData memory data = impactToken.getTokenData(tokenId);
 
             // Maximum possible yield claimable = full pool tracker * share - already claimed
-            uint256 maxYield = engine.poolYieldTracker(data.poolId) * data.poolShareBPS / 10_000;
+            uint256 maxYield = engine.poolYieldTracker(data.poolId) * data.poolShareWAD / 1e18;
             uint256 alreadyClaimedYield = engine.yieldClaimed(tokenId);
             uint256 maxClaimableYield =
                 maxYield > alreadyClaimedYield ? maxYield - alreadyClaimedYield : 0;
 
             // Maximum possible RoC claimable = min(full pool RoC * share, remaining principal)
-            uint256 maxRoc = engine.poolRocTracker(data.poolId) * data.poolShareBPS / 10_000;
+            uint256 maxRoc = engine.poolRocTracker(data.poolId) * data.poolShareWAD / 1e18;
             uint256 maxClaimableRoc = maxRoc > data.rocReturned ? maxRoc - data.rocReturned : 0;
             uint256 remainingPrincipal =
                 data.netPrincipal > data.rocReturned ? data.netPrincipal - data.rocReturned : 0;

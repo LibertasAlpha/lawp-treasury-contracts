@@ -29,10 +29,10 @@ contract LAWPFlowTest is LAWPTestBase {
     function test_FullLifecycleFlow() public {
         // STEP 1: 10-user pool deposit
         address[] memory users = new address[](10);
-        uint256[] memory bps = new uint256[](10);
+        uint256[] memory wads = new uint256[](10);
         for (uint160 i = 0; i < 10; i++) {
             users[i] = address(100 + i);
-            bps[i] = 1000; // 10% each
+            wads[i] = 1e17; // 10% each
         }
 
         uint256 grossDeposit = 100_000e6;
@@ -42,7 +42,7 @@ contract LAWPFlowTest is LAWPTestBase {
         _seedAndApprove();
 
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, grossDeposit, users, bps);
+        engine.processPoolDeposit(1, grossDeposit, users, wads);
 
         // Verify vault balances - full gross amount routed to operationalVault.
         // yieldVault holds zero: it is funded only by subsequent revenue routing.
@@ -153,11 +153,11 @@ contract LAWPFlowTest is LAWPTestBase {
         // Engine registered the pool
         assertTrue(engine.isPoolActive(100));
 
-        // Impact tokens minted: token 1 -> userA (6000 BPS), token 2 -> userB (4000 BPS)
+        // Impact tokens minted: token 1 -> userA (60% WAD), token 2 -> userB (40% WAD)
         assertEq(impactToken.ownerOf(1), userA);
         assertEq(impactToken.ownerOf(2), userB);
-        assertEq(impactToken.getTokenData(1).poolShareBPS, 6000);
-        assertEq(impactToken.getTokenData(2).poolShareBPS, 4000);
+        assertEq(impactToken.getTokenData(1).poolShareWAD, 6e17);
+        assertEq(impactToken.getTokenData(2).poolShareWAD, 4e17);
 
         // 4. Route GRANT_INITIAL 50_000e6 -> collective = 15_000e6
         _routeRevenue(100, 50_000e6, LAWPStructs.FlowType.GRANT_INITIAL);
@@ -263,14 +263,14 @@ contract LAWPFlowTest is LAWPTestBase {
 
     function test_MultiPool_YieldIsolation() public {
         // Pool A: coordinator deposits for userA
-        (address[] memory cA, uint256[] memory bA) = _singleContributor(userA);
+        (address[] memory cA, uint256[] memory wA) = _singleContributor(userA);
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, cA, bA);
+        engine.processPoolDeposit(1, 100_000e6, cA, wA);
 
         // Pool B: coordinator deposits for userB
-        (address[] memory cB, uint256[] memory bB) = _singleContributor(userB);
+        (address[] memory cB, uint256[] memory wB) = _singleContributor(userB);
         vm.prank(coordinator);
-        engine.processPoolDeposit(2, 200_000e6, cB, bB);
+        engine.processPoolDeposit(2, 200_000e6, cB, wB);
 
         // Route yield only to Pool A
         _routeRevenue(1, 10_000e6, LAWPStructs.FlowType.GRANT_INITIAL);
@@ -290,12 +290,12 @@ contract LAWPFlowTest is LAWPTestBase {
 
     function test_BatchClaim_MultipleTokens() public {
         // Deposit 3 tokens to userA (pools 1, 2, 3)
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
 
         vm.startPrank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
-        engine.processPoolDeposit(2, 50_000e6, c, b);
-        engine.processPoolDeposit(3, 75_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
+        engine.processPoolDeposit(2, 50_000e6, c, w);
+        engine.processPoolDeposit(3, 75_000e6, c, w);
         vm.stopPrank();
 
         // Route yield to all 3 pools
@@ -364,10 +364,10 @@ contract LAWPFlowTest is LAWPTestBase {
         engine.emergencyPause();
 
         // Direct deposit blocked
-        (address[] memory c, uint256[] memory b) = _singleContributor(userA);
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
         vm.prank(coordinator);
         vm.expectRevert();
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
 
         // Revenue routing blocked
         vm.prank(coordinator);
@@ -380,7 +380,7 @@ contract LAWPFlowTest is LAWPTestBase {
 
         // Now works
         vm.prank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, c, b);
+        engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     /// @notice Pause does NOT affect contributionPool.contribute() (pool is an independent
