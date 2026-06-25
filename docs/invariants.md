@@ -6,7 +6,7 @@ This document serves as the absolute source of truth for the stateful testing su
 
 **Definition:** The right to claim continuous "Human Node" yield and Return of Contribution (RoC) is strictly bound to the ownership of a specific ERC-721 Impact Token ID.
 
-**Invariant (Total BPS):** The sum of `poolShareBPS` across all tokens minted for a specific `poolId` MUST strictly equal 10000 (100%).
+**Invariant (Total WAD):** The sum of `poolShareWAD` across all tokens minted for a specific `poolId` MUST strictly equal 1e18 (100%).
 
 **Invariant (State Desync / Double Spend):** A `claimableYield` must never be double-spent. The overriding of `transferFrom` (The Interception Hook) must guarantee that all pending yields are flushed to the outgoing owner, and the state reset to zero, before the token changes ownership.
 

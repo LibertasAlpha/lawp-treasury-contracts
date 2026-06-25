@@ -136,7 +136,7 @@ Reverts when:
 
 - `LAWPImpactToken._update()`: The token transfer attempts to execute while the Compliance Engine is paused.
 - `LAWPMultiSigController.executeProposal()`: Signatures are unordered (duplicate submission) or `v, r, s` malleability is detected.
-- `LAWPComplianceEngine.processPoolDeposit()`: Basis points (`bpsShares`) array does not sum to exactly 10,000.
+- `LAWPComplianceEngine.processPoolDeposit()`: WAD fractions (`wadShares`) array does not sum to exactly 1e18 (100%).
 - `LAWPYieldVault.executeTransfer()` / `LAWPOperationalVault.executeTransfer()`: The caller is anyone other than the registered Compliance Engine.
 
 ## External Dependencies

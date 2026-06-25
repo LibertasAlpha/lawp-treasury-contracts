@@ -253,9 +253,8 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     ///      This lets a contributor top up their position after the initial deposit.
     function contribute(uint256 _poolId, uint256 _amount) external override nonReentrant {
         // Checks
-        if (_amount < MIN_CONTRIBUTION) revert LAWPContributionPool__ContributionTooSmall();
-
         if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
+        if (_amount < MIN_CONTRIBUTION) revert LAWPContributionPool__ContributionTooSmall();
 
         PoolConfig storage pool = _pools[_poolId];
         if (pool.status != PoolStatus.Open) revert LAWPContributionPool__PoolNotOpen();
@@ -401,8 +400,8 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         if (pool.status != PoolStatus.Failed) revert LAWPContributionPool__NotFailed();
 
         ContributionRecord storage record = _contributions[_poolId][msg.sender];
-        if (record.amount == 0) revert LAWPContributionPool__NoContribution();
         if (record.refundClaimed) revert LAWPContributionPool__RefundAlreadyClaimed();
+        if (record.amount == 0) revert LAWPContributionPool__NoContribution();
 
         uint256 refundAmount = record.amount;
 

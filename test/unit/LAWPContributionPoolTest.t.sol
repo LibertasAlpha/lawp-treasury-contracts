@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import { console2 } from "forge-std/console2.sol";
 import { LAWPTestBase } from "../base/LAWPTestBase.sol";
 import { LAWPContributionPool } from "../../src/core/LAWPContributionPool.sol";
 import { ILAWPContributionPool } from "../../src/interfaces/ILAWPContributionPool.sol";
@@ -94,7 +95,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         address newEngine = address(77);
         vm.prank(admin);
         vm.expectEmit(true, true, false, false);
-        emit ILAWPContributionPool.ComplianceEngineUpdated(address(cngn), newEngine);
+        emit ILAWPContributionPool.ComplianceEngineUpdated(address(engine), newEngine);
         contributionPool.setComplianceEngine(newEngine);
         assertEq(contributionPool.complianceEngine(), newEngine);
     }
@@ -170,8 +171,15 @@ contract LAWPContributionPoolTest is LAWPTestBase {
 
     function test_CreatePool_RevertIf_EndTimeInPast() public {
         vm.prank(admin);
+
+        vm.warp(100);
+        console2.log(block.timestamp);
+
+        uint256 start = block.timestamp - 2;
+        uint256 end = block.timestamp - 1;
+
         vm.expectRevert(LAWPContributionPool.LAWPContributionPool__InvalidWindow.selector);
-        contributionPool.createPool(ENGINE_POOL_ID, GOAL, block.timestamp - 2, block.timestamp - 1);
+        contributionPool.createPool(ENGINE_POOL_ID, GOAL, start, end);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -208,7 +216,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
 
     function test_CancelPool_RevertIf_HasContributions() public {
         uint256 poolId = _createStandardPool();
-        _contribute(userA, poolId, 1e6);
+        _contribute(userA, poolId, 100e6);
 
         vm.prank(admin);
         vm.expectRevert(LAWPContributionPool.LAWPContributionPool__PoolNotEmpty.selector);
@@ -289,7 +297,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
     function test_Contribute_RevertIf_InvalidPool() public {
         vm.prank(userA);
         vm.expectRevert(LAWPContributionPool.LAWPContributionPool__InvalidPool.selector);
-        contributionPool.contribute(999, 1e6);
+        contributionPool.contribute(999, 100e6);
     }
 
     function test_Contribute_RevertIf_ZeroAmount() public {

@@ -311,7 +311,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         w[0] = 5e17; // Sums to 9e17, not 1e18
         w[1] = 4e17;
         vm.prank(coordinator);
-        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidBPS.selector);
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidWAD.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
@@ -814,7 +814,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         w[1] = w2;
 
         vm.prank(coordinator);
-        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidBPS.selector);
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidWAD.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 }

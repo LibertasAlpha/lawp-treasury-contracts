@@ -68,8 +68,8 @@ The system is designed with explicit trust boundaries. We enforce the principle 
 
 ### G. Insolvency via Fractional Dust
 
-- **Threat:** Solidity does not support floating-point numbers. Rounding errors in BPS (basis points) calculations during pool processing cause the protocol to route more funds than it actually possesses, rendering the system insolvent over time.
-- **Mitigation:** The `_mintContributorShares` function operates on a "Remainder Absorption" pattern. The final contributor in the array receives `remainingCapital` rather than a recalculated BPS slice. The stateful invariant fuzzer (`LAWPInvariants.t.sol`) mathematically proves that `Sum(netPrincipal) == GrossDeposit - RiskFee` down to the exact wei.
+- **Threat:** Solidity does not support floating-point numbers. Rounding errors in WAD (`1e18`) fractional calculations during pool processing cause the protocol to route more funds than it actually possesses, rendering the system insolvent over time.
+- **Mitigation:** The `_mintContributorShares` function operates on a "Remainder Absorption" pattern. The final contributor in the array receives `remainingCapital` rather than a recalculated WAD slice. The stateful invariant fuzzer (`LAWPInvariants.t.sol`) mathematically proves that `Sum(netPrincipal) == GrossDeposit - RiskFee` down to the exact wei.
 
 ## 4. Invariant Guarantees
 

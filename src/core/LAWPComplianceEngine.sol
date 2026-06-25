@@ -37,7 +37,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     error LAWPComplianceEngine_InvalidFlowType();
     error LAWPComplianceEngine_ExceedsPrincipalCap();
     error LAWPComplianceEngine_ArrayMismatch();
-    error LAWPComplianceEngine_InvalidBPS();
+    error LAWPComplianceEngine_InvalidWAD();
     error LAWPComplianceEngine_ZeroAddress();
     error LAWPComplianceEngine_InvalidAmount();
     error LAWPComplianceEngine_PoolAlreadyExists();
@@ -646,7 +646,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
                 ++i;
             }
         }
-        if (totalWAD != TOTAL_SHARES) revert LAWPComplianceEngine_InvalidBPS();
+        if (totalWAD != TOTAL_SHARES) revert LAWPComplianceEngine_InvalidWAD();
     }
 
     /// @notice Determines the systemic risk fee and final net capital from a gross deposit amount.
