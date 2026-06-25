@@ -460,10 +460,10 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_ProcessPoolDeposit_WritesPoolTotalPrincipal() public {
         uint256 gross = 100_000e6;
         uint256 expectedNet = 90_000e6; // 10% risk fee
-        
+
         address tempPool = _switchToTempPool();
         cngn.mintTest(tempPool, gross);
-        
+
         vm.startPrank(tempPool);
         cngn.approve(address(engine), type(uint256).max);
 
@@ -814,7 +814,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
         grossAmount = bound(grossAmount, 1_000e6, 1_000_000e6);
         uint256 expectedNet = grossAmount - (grossAmount * 1000) / 10_000;
-        
+
         uint256 minWad = (minContribution * 1e18 + grossAmount - 1) / grossAmount;
 
         w1 = bound(w1, minWad, 1e18 - minWad);
