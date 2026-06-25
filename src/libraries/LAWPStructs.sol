@@ -22,7 +22,7 @@ library LAWPStructs {
     ///
     ///      This replaces the former Basis Points representation (denominator = 10_000).
     ///      With a 10,000-unit denominator, any contributor providing less than 1/10,000
-    ///      of the pool total would be rounded to 0, causing an InvalidBPS revert on mint.
+    ///      of the pool total would be rounded to 0, causing an InvalidWAD revert on mint.
     ///      With a 1e18-unit denominator, a contributor would need to provide less than
     ///      1 quintillionth (10^-18) of the pool total to be zeroed - economically impossible
     ///      at cNGN's 6-decimal scale.

@@ -92,11 +92,13 @@ contract ConfigureLAWPSystem is Script {
 
     function _wireSystemDependencies() internal {
         complianceEngine.setMultiSigController(address(multiSigController));
+        complianceEngine.setContributionPool(address(contributionPool));
 
         yieldVault.setComplianceEngine(address(complianceEngine));
         operationalVault.setComplianceEngine(address(complianceEngine));
         impactToken.setComplianceEngine(address(complianceEngine));
         contributionPool.setComplianceEngine(address(complianceEngine));
+        complianceEngine.setContributionPool(address(contributionPool));
     }
 
     /*//////////////////////////////////////////////////////////////

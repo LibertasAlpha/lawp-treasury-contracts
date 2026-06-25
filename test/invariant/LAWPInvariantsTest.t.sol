@@ -112,6 +112,7 @@ contract LAWPInvariantsTest is Test {
         // Wire trust boundaries
         vm.startPrank(admin);
         engine.setMultiSigController(address(multiSig));
+        engine.setContributionPool(address(contributionPool));
         yieldVault.setComplianceEngine(address(engine));
         operationalVault.setComplianceEngine(address(engine));
         impactToken.setComplianceEngine(address(engine));

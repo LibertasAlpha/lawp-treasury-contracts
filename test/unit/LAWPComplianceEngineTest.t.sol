@@ -187,6 +187,14 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
                       PROCESS POOL DEPOSIT TESTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Helper to assign a temporary pool to bypass ContributionPool validations
+    ///         for engine-specific edge case revert testing.
+    function _switchToTempPool() internal returns (address tempPool) {
+        tempPool = address(1234);
+        vm.prank(admin);
+        engine.setContributionPool(tempPool);
+    }
+
     function test_ProcessPoolDeposit_Success() public {
         uint256 gross = 100_000e6;
         uint256 expectedRiskFee = 10_000e6;
@@ -195,9 +203,10 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         uint256 yieldBefore = cngn.balanceOf(address(yieldVault));
         uint256 opBefore = cngn.balanceOf(address(operationalVault));
 
-        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, gross, c, w);
+        uint256 poolId = _createContribPool(1, gross, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, poolId, gross);
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(poolId);
 
         // Full gross amount routed to operationalVault in a single transfer.
         // yieldVault receives nothing at deposit time.
@@ -226,17 +235,14 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
     function test_ProcessPoolDeposit_DustGoesToLastContributor() public {
         uint256 gross = 100_000e6; // net = 90_000e6
-        address[] memory c = new address[](3);
-        c[0] = userA;
-        c[1] = userB;
-        c[2] = userC;
-        uint256[] memory w = new uint256[](3);
-        w[0] = 3e17;
-        w[1] = 3e17;
-        w[2] = 4e17;
 
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, gross, c, w);
+        uint256 poolId = _createContribPool(1, gross, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, poolId, 30_000e6);
+        _contribute(userB, poolId, 30_000e6);
+        _contribute(userC, poolId, 40_000e6);
+
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(poolId);
 
         // A & B: 90_000e6 * 3e17 / 1e18 = 27_000e6
         assertEq(impactToken.getTokenData(1).netPrincipal, 27_000e6);
@@ -256,61 +262,68 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         engine.emergencyPause();
 
         (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
+        vm.prank(address(contributionPool));
         vm.expectRevert();
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_PoolAlreadyExists() public {
-        _setupStandardDeposit();
-        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
+        _setupStandardDeposit(); // creates pool 1
+        (address[] memory c, uint256[] memory w) = _singleContributor(userB);
+
+        address tempPool = _switchToTempPool();
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_PoolAlreadyExists.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_ZeroAmount() public {
+        address tempPool = _switchToTempPool();
         (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidAmount.selector);
         engine.processPoolDeposit(1, 0, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_ArrayMismatch() public {
+        address tempPool = _switchToTempPool();
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
         uint256[] memory w = new uint256[](1);
         w[0] = 1e18;
-        vm.prank(coordinator);
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ArrayMismatch.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_EmptyArray() public {
+        address tempPool = _switchToTempPool();
         address[] memory c = new address[](0);
         uint256[] memory w = new uint256[](0);
-        vm.prank(coordinator);
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ArrayMismatch.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_TooManyContributors() public {
+        address tempPool = _switchToTempPool();
         address[] memory c = new address[](21);
         uint256[] memory w = new uint256[](21);
-        vm.prank(coordinator);
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ArrayTooLarge.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
 
     function test_ProcessPoolDeposit_RevertIf_InvalidWAD() public {
+        address tempPool = _switchToTempPool();
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
         uint256[] memory w = new uint256[](2);
-        w[0] = 5e17; // Sums to 9e17, not 1e18
-        w[1] = 4e17;
-        vm.prank(coordinator);
+        w[0] = 5e17; // 50%
+        w[1] = 4e17; // 40% (total 90% != 100%)
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidWAD.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
@@ -447,10 +460,19 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_ProcessPoolDeposit_WritesPoolTotalPrincipal() public {
         uint256 gross = 100_000e6;
         uint256 expectedNet = 90_000e6; // 10% risk fee
+        
+        address tempPool = _switchToTempPool();
+        cngn.mintTest(tempPool, gross);
+        
+        vm.startPrank(tempPool);
+        cngn.approve(address(engine), type(uint256).max);
+
         (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
+
         engine.processPoolDeposit(1, gross, c, w);
         assertEq(engine.poolTotalPrincipal(1), expectedNet);
+
+        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -685,7 +707,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_PoolReplay_CannotDepositTwice() public {
         _setupStandardDeposit();
         (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
+        vm.prank(address(contributionPool));
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_PoolAlreadyExists.selector);
         engine.processPoolDeposit(1, 50_000e6, c, w);
     }
@@ -695,7 +717,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         c[0] = address(0);
         uint256[] memory w = new uint256[](1);
         w[0] = 1e18;
-        vm.prank(coordinator);
+        vm.prank(address(contributionPool));
         // ERC721 mint to address(0) reverts
         vm.expectRevert();
         engine.processPoolDeposit(1, 100_000e6, c, w);
@@ -724,14 +746,20 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     ///         transfer burns the amount in operationalVault), which means the vault
     ///         balance does not increase at all.
     function test_ProcessPoolDeposit_RevertIf_ZeroActualReceived() public {
+        address tempPool = _switchToTempPool();
+
+        cngn.mintTest(tempPool, 100_000e6);
+        vm.prank(tempPool);
+        cngn.approve(address(engine), type(uint256).max);
+
         // Configure operationalVault as an "internal" cNGN user so that any
         // inbound transfer is immediately burned by the token (100%-fee-on-transfer).
         adminOps.setInternalWhitelisted(address(operationalVault), true);
-        // Configure coordinator as an external sender (triggers the burn path).
-        adminOps.setExternalWhitelisted(coordinator, true);
+        // Configure tempPool as an external sender (triggers the burn path).
+        adminOps.setExternalWhitelisted(tempPool, true);
 
         (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ZeroActualReceived.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
@@ -744,9 +772,10 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_ProcessPoolDeposit_AccountingUsesActualReceived() public {
         uint256 gross = 100_000e6;
 
-        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, gross, c, w);
+        uint256 poolId = _createContribPool(1, gross, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, poolId, gross);
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(poolId);
 
         // Confirm: actual vault balance == gross (no fee in MockCngn3 standard path).
         assertEq(cngn.balanceOf(address(operationalVault)), gross);
@@ -781,21 +810,25 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function testFuzz_ProcessPoolDeposit_AccumulatorCorrectness(uint256 grossAmount, uint256 w1)
         public
     {
-        grossAmount = bound(grossAmount, 1e6, 1_000_000e6);
+        uint256 minContribution = contributionPool.MIN_CONTRIBUTION();
+
+        grossAmount = bound(grossAmount, 1_000e6, 1_000_000e6);
         uint256 expectedNet = grossAmount - (grossAmount * 1000) / 10_000;
-        uint256 minWad = 1e18 / expectedNet + 1;
+        
+        uint256 minWad = (minContribution * 1e18 + grossAmount - 1) / grossAmount;
+
         w1 = bound(w1, minWad, 1e18 - minWad);
-        uint256 w2 = 1e18 - w1;
 
-        address[] memory c = new address[](2);
-        c[0] = userA;
-        c[1] = userB;
-        uint256[] memory w = new uint256[](2);
-        w[0] = w1;
-        w[1] = w2;
+        uint256 amount1 = (grossAmount * w1) / 1e18;
+        uint256 amount2 = grossAmount - amount1;
 
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, grossAmount, c, w);
+        uint256 poolId =
+            _createContribPool(1, grossAmount, block.timestamp, block.timestamp + 1 hours);
+        if (amount1 > 0) _contribute(userA, poolId, amount1);
+        if (amount2 > 0) _contribute(userB, poolId, amount2);
+
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(poolId);
 
         uint256 sum =
             impactToken.getTokenData(1).netPrincipal + impactToken.getTokenData(2).netPrincipal;
@@ -806,6 +839,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         w1 = bound(w1, 1, 1e18 - 1);
         uint256 w2 = 1e18 - w1 - 1; // Intentionally wrong
 
+        address tempPool = _switchToTempPool();
         address[] memory c = new address[](2);
         c[0] = userA;
         c[1] = userB;
@@ -813,7 +847,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         w[0] = w1;
         w[1] = w2;
 
-        vm.prank(coordinator);
+        vm.prank(tempPool);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidWAD.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }

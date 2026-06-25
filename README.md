@@ -29,6 +29,10 @@ The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing
   - **Responsibility:** Calculates proportional equity, deducts systemic risk fees, and executes mathematical routing. Updates internal accounting ledgers and instructs the movement of tokens without holding funds.
   - **Key Functions:** `processPoolDeposit()`, `routeOperationalAllocation()`, `claimYield()`, `claimOperationalFunds()`
 
+- **LAWPContributionPool (The Aggregator)**
+  - **Responsibility:** Decentralized and non-custodial staging area for user capital. Aggregates fractional deposits into a single pool until a goal is met, then atomicaly settles with the Compliance Engine. Allows refunds if the goal is not met by the deadline.
+  - **Key Functions:** `createPool()`, `contribute()`, `settle()`, `claimRefund()`
+
 - **LAWPYieldVault (Vault A: Investor Yield & RoC)**
   - **Responsibility:** Subordinate vault holding Return of Contribution (RoC) and pending Yield accumulated via revenue routing. Receives **no funds at deposit time** - it is funded exclusively by `routeOperationalAllocation` (GRANT_INITIAL, GRANT_CONTINUOUS, RoC flows). Contains no public deposit functions to prevent orphaned capital.
   - **Key Functions:** `executeTransfer()`

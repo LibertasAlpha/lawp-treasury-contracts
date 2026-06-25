@@ -29,20 +29,19 @@ contract LAWPFlowTest is LAWPTestBase {
     function test_FullLifecycleFlow() public {
         // STEP 1: 10-user pool deposit
         address[] memory users = new address[](10);
-        uint256[] memory wads = new uint256[](10);
+        uint256 poolId =
+            _createContribPool(1, 100_000e6, block.timestamp, block.timestamp + 1 hours);
         for (uint160 i = 0; i < 10; i++) {
             users[i] = address(100 + i);
-            wads[i] = 1e17; // 10% each
+            cngn.mintTest(users[i], 10_000e6);
+            _contribute(users[i], poolId, 10_000e6);
         }
 
         uint256 grossDeposit = 100_000e6;
-        // uint256 netCapital = 90_000e6;
         uint256 perUserNet = 9_000e6; // 10% of netCapital
 
-        _seedAndApprove();
-
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, grossDeposit, users, wads);
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(poolId);
 
         // Verify vault balances - full gross amount routed to operationalVault.
         // yieldVault holds zero: it is funded only by subsequent revenue routing.
@@ -263,14 +262,16 @@ contract LAWPFlowTest is LAWPTestBase {
 
     function test_MultiPool_YieldIsolation() public {
         // Pool A: coordinator deposits for userA
-        (address[] memory cA, uint256[] memory wA) = _singleContributor(userA);
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, cA, wA);
+        uint256 p1 = _createContribPool(1, 100_000e6, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, p1, 100_000e6);
 
         // Pool B: coordinator deposits for userB
-        (address[] memory cB, uint256[] memory wB) = _singleContributor(userB);
-        vm.prank(coordinator);
-        engine.processPoolDeposit(2, 200_000e6, cB, wB);
+        uint256 p2 = _createContribPool(2, 200_000e6, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userB, p2, 200_000e6);
+
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(p1);
+        _settlePool(p2);
 
         // Route yield only to Pool A
         _routeRevenue(1, 10_000e6, LAWPStructs.FlowType.GRANT_INITIAL);
@@ -290,13 +291,19 @@ contract LAWPFlowTest is LAWPTestBase {
 
     function test_BatchClaim_MultipleTokens() public {
         // Deposit 3 tokens to userA (pools 1, 2, 3)
-        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
+        uint256 p1 = _createContribPool(1, 100_000e6, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, p1, 100_000e6);
 
-        vm.startPrank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, c, w);
-        engine.processPoolDeposit(2, 50_000e6, c, w);
-        engine.processPoolDeposit(3, 75_000e6, c, w);
-        vm.stopPrank();
+        uint256 p2 = _createContribPool(2, 50_000e6, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, p2, 50_000e6);
+
+        uint256 p3 = _createContribPool(3, 75_000e6, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, p3, 75_000e6);
+
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(p1);
+        _settlePool(p2);
+        _settlePool(p3);
 
         // Route yield to all 3 pools
         _routeRevenue(1, 10_000e6, LAWPStructs.FlowType.GRANT_INITIAL); // 3_000 col
@@ -364,14 +371,16 @@ contract LAWPFlowTest is LAWPTestBase {
         engine.emergencyPause();
 
         // Direct deposit blocked
-        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
-        vm.prank(coordinator);
-        vm.expectRevert();
-        engine.processPoolDeposit(1, 100_000e6, c, w);
+        uint256 p1 = _createContribPool(1, 100_000e6, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, p1, 100_000e6);
+        vm.warp(block.timestamp + 1 hours + 1);
+
+        vm.expectRevert(bytes4(keccak256("EnforcedPause()")));
+        _settlePool(p1);
 
         // Revenue routing blocked
         vm.prank(coordinator);
-        vm.expectRevert();
+        vm.expectRevert(bytes4(keccak256("EnforcedPause()")));
         mockMultiSig.execute(1, 10_000e6, LAWPStructs.FlowType.RoC);
 
         // Resume
@@ -379,8 +388,7 @@ contract LAWPFlowTest is LAWPTestBase {
         engine.unpause();
 
         // Now works
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, c, w);
+        _settlePool(p1);
     }
 
     /// @notice Pause does NOT affect contributionPool.contribute() (pool is an independent

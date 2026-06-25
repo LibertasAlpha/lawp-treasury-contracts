@@ -76,6 +76,9 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @notice Multi-Sig Controller address authorized to route revenue and trigger emergency pauses.
     address public multiSigController;
 
+    /// @notice Contribution Pool address authorized to initiate capital formation and mint fractional shares.
+    address public contributionPool;
+
     /// @notice Current systemic risk fee in basis points (BPS) deducted from gross pool deposits.
     uint256 public riskFeeBPS;
 
@@ -143,8 +146,18 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         _;
     }
 
+    /// @notice Restricts execution strictly to the authorized Contribution Pool.
+    modifier onlyContributionPool() {
+        _onlyContributionPool();
+        _;
+    }
+
     function _onlyMultiSig() internal view {
         if (msg.sender != multiSigController) revert LAWPComplianceEngine_UnauthorizedCaller();
+    }
+
+    function _onlyContributionPool() internal view {
+        if (msg.sender != contributionPool) revert LAWPComplianceEngine_UnauthorizedCaller();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -205,6 +218,16 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         emit MultiSigControllerUpdated(oldController, _multiSig);
     }
 
+    /// @notice Sets the operational Contribution Pool address.
+    /// @param _contributionPool The address of the authorized Contribution Pool.
+    function setContributionPool(address _contributionPool) external onlyOwner {
+        if (_contributionPool == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        address oldPool = contributionPool;
+        contributionPool = _contributionPool;
+
+        emit ContributionPoolUpdated(oldPool, _contributionPool);
+    }
+
     /// @notice Updates the systemic risk fee applied to incoming pool deposits.
     /// @param _newFeeBPS The new fee in basis points (must not exceed MAX_RISK_FEE).
     function updateRiskFee(uint256 _newFeeBPS) external onlyOwner {
@@ -253,7 +276,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         uint256 _grossAmount,
         address[] calldata _contributors,
         uint256[] calldata _wadShares
-    ) external override whenNotPaused nonReentrant {
+    ) external override onlyContributionPool whenNotPaused nonReentrant {
         // Checks: Validate inputs, enforce maximum contributors bound, and confirm new poolId.
         if (pools[_poolId].exists) revert LAWPComplianceEngine_PoolAlreadyExists();
         if (_grossAmount == 0) revert LAWPComplianceEngine_InvalidAmount();

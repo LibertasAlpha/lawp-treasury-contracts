@@ -246,10 +246,14 @@ contract LAWPHandler is Test {
 
         // 3. Assign unique pool ID and call the protocol
         uint256 poolId = nextPoolId++;
-        address relayer = activeUsers[0]; // Stable relayer - pre-approved in constructor
+        address cngnOwner = cngn.owner();
+        vm.prank(cngnOwner);
+        cngn.mintTest(address(contributionPool), amount);
 
-        vm.prank(relayer);
+        vm.startPrank(address(contributionPool));
+        cngn.approve(address(engine), amount);
         engine.processPoolDeposit(poolId, amount, users, wads);
+        vm.stopPrank();
 
         // 4. Update tracking arrays
         activePools.push(poolId);

@@ -26,6 +26,9 @@ interface ILAWPComplianceEngine {
     /// @notice Emitted when the Multi-Sig Controller address is updated.
     event MultiSigControllerUpdated(address indexed oldController, address indexed newController);
 
+    /// @notice Emitted when the Contribution Pool address is updated.
+    event ContributionPoolUpdated(address indexed oldPool, address indexed newPool);
+
     /// @notice Emitted when a new project pool is created.
     event PoolCreated(uint256 indexed poolId, uint256 timestamp);
 

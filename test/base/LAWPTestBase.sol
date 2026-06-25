@@ -144,8 +144,6 @@ abstract contract LAWPTestBase is Test {
         mockMultiSig = new MockMultiSig(address(engine));
     }
 
-    /// @dev Deploys the ContributionPool. Engine and cNGN must be deployed first.
-    ///      The pool owner is `admin`, matching the other protocol contracts.
     function _deployContributionPool() internal {
         contributionPool = new LAWPContributionPool(address(cngn), admin);
     }
@@ -153,6 +151,7 @@ abstract contract LAWPTestBase is Test {
     function _linkContracts() internal {
         vm.startPrank(admin);
         engine.setMultiSigController(address(mockMultiSig));
+        engine.setContributionPool(address(contributionPool));
         yieldVault.setComplianceEngine(address(engine));
         operationalVault.setComplianceEngine(address(engine));
         impactToken.setComplianceEngine(address(engine));
@@ -177,13 +176,12 @@ abstract contract LAWPTestBase is Test {
         // Only vaults hold protocol cNGN
         assertEq(cngn.balanceOf(address(mockMultiSig)), 0, "MockMultiSig must hold zero cNGN");
         assertEq(cngn.balanceOf(address(engine)), 0, "Engine must hold zero cNGN");
-        // ContributionPool starts empty
+
         assertEq(
             cngn.balanceOf(address(contributionPool)),
             0,
             "ContributionPool must hold zero cNGN at deploy"
         );
-        // Pool counter starts at 1
         assertEq(contributionPool.nextPoolId(), 1, "ContributionPool nextPoolId must start at 1");
     }
 
@@ -199,14 +197,14 @@ abstract contract LAWPTestBase is Test {
     ///         Token 1 -> userA: netPrincipal=54_000e6, WAD=6e17
     ///         Token 2 -> userB: netPrincipal=36_000e6, WAD=4e17
     function _setupStandardDeposit() internal {
-        address[] memory c = new address[](2);
-        c[0] = userA;
-        c[1] = userB;
-        uint256[] memory w = new uint256[](2);
-        w[0] = 6e17;
-        w[1] = 4e17;
-        vm.prank(coordinator);
-        engine.processPoolDeposit(1, 100_000e6, c, w);
+        uint256 poolId =
+            _createContribPool(1, 100_000e6, block.timestamp, block.timestamp + 1 hours);
+
+        _contribute(userA, poolId, 60_000e6);
+        _contribute(userB, poolId, 40_000e6);
+
+        vm.warp(block.timestamp + 1 hours + 1);
+        _settlePool(poolId);
     }
 
     /// @notice Routes revenue through MockMultiSig. Coordinator is fund provider.
