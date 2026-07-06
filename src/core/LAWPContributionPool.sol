@@ -22,25 +22,22 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 ///         Uses a nextPoolId counter + mapping pattern to store per-pool config and state,
 ///         so a single deployment serves all future pools without redeployment cost.
 ///
-///      2. Protocol-level constants (engine, cNGNToken) are immutable.
-///         Per-pool parameters (goal, window, maxContributors) live in _pools[poolId].
-///
-///      3. Strict CEI throughout.
+///      2. Strict CEI throughout.
 ///         In settle(): status -> Settled BEFORE the external engine call.
 ///         In claimRefund(): record zeroed BEFORE the cNGNToken transfer.
 ///         In contribute(): storage written BEFORE safeTransferFrom.
 ///
-///      4. WAD dust absorption.
+///      3. WAD dust absorption.
 ///         The last contributor in the ordered list absorbs rounding dust so
 ///         sum(wadShares) == TOTAL_SHARES == 1e18 is always guaranteed before
 ///         the array is forwarded to processPoolDeposit.
 ///
-///      5. Approval hygiene.
+///      4. Approval hygiene.
 ///         The engine allowance is set to totalRaised immediately before the engine
 ///         call and reset to 0 immediately after, limiting the approval window to
 ///         the duration of a single call stack.
 ///
-///      6. MAX_CONTRIBUTORS mirrors the ComplianceEngine's hard cap (20).
+///      5. MAX_CONTRIBUTORS mirrors the ComplianceEngine's hard cap (20).
 ///         Configurable per pool up to this ceiling; enforced in createPool().
 contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -51,10 +48,10 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
 
     error LAWPContributionPool__ZeroAddress();
     error LAWPContributionPool__InvalidPool();
+    error LAWPContributionPool__EngineInvalidPool();
     error LAWPContributionPool__InvalidGoal();
     error LAWPContributionPool__InvalidWindow();
     error LAWPContributionPool__InvalidMaxContributors();
-    error LAWPContributionPool__EnginePoolIdZero();
     error LAWPContributionPool__PoolNotOpen();
     error LAWPContributionPool__WindowNotOpen();
     error LAWPContributionPool__WindowNotClosed();
@@ -85,35 +82,18 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     uint256 public constant TOTAL_SHARES = 1e18;
 
     /// @notice Minimum single contribution accepted by this pool (100 cNGN or ₦100).
+    /// @dev Enforced at entry so every accepted contribution
+    ///      receives a non-zero WAD share.
     ///
-    /// @dev PROOF OF SAFETY (WAD rounding floor):
-    ///      A contributor's WAD share rounds to 0 iff:
+    ///      Zero-share condition:
     ///          (amount * 1e18) < totalRaised
-    ///      With MIN_CONTRIBUTION = 100 * 1e6 = 1e8:
-    ///          (1e8 * 1e18) < totalRaised
-    ///           1e26        < totalRaised
     ///
-    ///      Reaching 1e26 base units would require totalRaised > 1e20 cNGN
-    ///      (100 Quintillion cNGN).
+    ///      With MIN_CONTRIBUTION = 100 * 1e6 = 1e9:
+    ///          totalRaised >  (1e8 * 1e18 = 1e26 base units)
+    ///      Reaching 1e26 base units would require totalRaised > 1e20 cNGN (100 Quintillion cNGN).
     ///
-    ///      At current monetary scales this exceeds estimates of global broad
-    ///      money supply by several orders of magnitude, making the threshold
-    ///      economically unreachable in practice.
-    ///
-    ///      Therefore every accepted contribution is guaranteed to receive a
-    ///      non-zero WAD share without runtime dust filtering.
-    ///
-    ///      WHY AT contribute() NOT settle():
-    ///      Enforcing the floor here - at the single point of entry - prevents the
-    ///      invalid amount from ever entering pool state. Deferring to settle() would
-    ///      brick the entire pool at settlement time with no recovery path (DoS).
-    ///
-    ///      FLASH LOAN DEFENCE:
-    ///      Even if a malicious actor flash-loans cNGN to artificially inflate
-    ///      totalRaised, they cannot touch contributions already recorded.
-    ///      All existing contributors' amounts satisfy the bound at the moment
-    ///      they were accepted. Post-settlement inflation is irrelevant because
-    ///      the pool is already Settled and locked.
+    ///      Therefore, accepted contributions cannot realistically
+    ///      round to zero during settlement.
     uint256 public constant MIN_CONTRIBUTION = 100 * 1e6; // 100 cNGN (6 decimals)
 
     /*//////////////////////////////////////////////////////////////
@@ -131,7 +111,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
                          MULTI-POOL STATE REGISTRY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Total pools ever created. Used as the next poolId on createPool().
+    /// @notice Next pool identifier to assign. Starts at 1; poolId 0 is reserved.
     uint256 public nextPoolId;
 
     /// @notice Core configuration and runtime state for each pool.
@@ -191,8 +171,15 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         returns (uint256 poolId)
     {
         // Checks
-        if (_enginePoolId == 0) revert LAWPContributionPool__EnginePoolIdZero();
+        if (
+            _enginePoolId == 0
+                || ILAWPComplianceEngine(complianceEngine).isPoolActive(_enginePoolId)
+        ) {
+            revert LAWPContributionPool__EngineInvalidPool();
+        }
         if (_goal == 0) revert LAWPContributionPool__InvalidGoal();
+
+        // NOTE: The startTime may be in the past to tolerate transaction delays, but the endTime must be in the future to allow contributions.
         if (_startTime >= _endTime || _endTime <= block.timestamp) {
             revert LAWPContributionPool__InvalidWindow();
         }
@@ -237,11 +224,11 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
 
     /// @inheritdoc ILAWPContributionPool
     /// @dev SECURITY - CEI ordering:
-    ///      0. Minimum contribution floor enforced FIRST to close the WAD zero-rounding
+    ///      1. Minimum contribution floor enforced FIRST to close the WAD zero-rounding
     ///         DoS vector at the point of entry (see MIN_CONTRIBUTION for full proof).
-    ///      1. Validate all remaining conditions (Checks)
-    ///      2. Write storage: slot registration, amount accumulation, totalRaised (Effects)
-    ///      3. Pull cNGNToken from caller (Interaction)
+    ///      2. Validate all remaining conditions (Checks)
+    ///      3. Write storage: slot registration, amount accumulation, totalRaised (Effects)
+    ///      4. Pull cNGNToken from caller (Interaction)
     ///      Storage is mutated before the external call so a re-entrant contribute()
     ///      would see the already-updated contributorCount and amount, preventing
     ///      any double-slot or double-amount exploit.
@@ -302,14 +289,16 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     ///      This guarantees Σ(wadShares) == 1e18 regardless of contributor count or
     ///      amounts, matching the engine's own _mintContributorShares dust-absorption
     ///      pattern. Because the denominator is 1e18, any contributor providing less
-    ///      than 1 quintillionth of the pool rounds to 0 - economically impossible.
+    ///      than 100 Quintillion cNGN of the pool rounds to 0 - economically impossible.
     function settle(uint256 _poolId) external override onlyOwner nonReentrant {
         // Checks
         if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
 
         PoolConfig storage pool = _pools[_poolId];
         if (pool.status != PoolStatus.Open) revert LAWPContributionPool__AlreadySettled();
-        if (block.timestamp < pool.endTime) revert LAWPContributionPool__WindowNotClosed();
+        if (block.timestamp < pool.endTime && pool.totalRaised < pool.goal) {
+            revert LAWPContributionPool__WindowNotClosed();
+        }
         if (pool.totalRaised < pool.goal) revert LAWPContributionPool__GoalNotMet();
 
         uint256 totalRaised = pool.totalRaised;
@@ -321,18 +310,24 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         uint256[] memory wadShares = new uint256[](contributorCount);
 
         uint256 wadAccumulated = 0;
+
+        // Note: goal > 0 and contributions atomically increment contributorCount
+        //       so contributorCount > 0 is guaranteed by the goal check above.
         uint256 lastIndex = contributorCount - 1;
 
         for (uint256 i = 0; i < contributorCount;) {
             address contributor = _contributorLists[_poolId][i];
             contributors[i] = contributor;
 
+            // the shares should be determined after the risk fee has taken
             uint256 wad;
             if (i == lastIndex) {
                 // Last contributor absorbs all WAD rounding dust.
                 // Guarantees sum(wadShares) == TOTAL_SHARES (1e18) exactly.
                 wad = TOTAL_SHARES - wadAccumulated;
             } else {
+                // Compute the contributor's pro-rata WAD share (1e18 = 100%).
+                // Not their Money but their share of the pool's totalRaised. The last contributor absorbs any rounding dust.
                 wad = (_contributions[_poolId][contributor].amount * TOTAL_SHARES) / totalRaised;
                 wadAccumulated += wad;
             }

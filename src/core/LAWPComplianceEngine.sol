@@ -687,7 +687,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @dev Computes WAD shares for each contributor:
     ///      share_i = floor(amount_i / totalRaised × 1e18)
     ///      The last contributor absorbs rounding dust so sum(wadShares) == 1e18 exactly.
-    ///      Principal is derived proportionally from netCapital using the same amounts.
+    ///      Net principal is allocated proportionally using contributor WAD shares.
     function _mintContributorShares(
         uint256 _poolId,
         uint256 _netCapital,

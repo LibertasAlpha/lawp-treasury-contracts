@@ -153,7 +153,7 @@ contract LAWPContributionPoolTest is LAWPTestBase {
 
     function test_CreatePool_RevertIf_EnginePoolIdZero() public {
         vm.prank(admin);
-        vm.expectRevert(LAWPContributionPool.LAWPContributionPool__EnginePoolIdZero.selector);
+        vm.expectRevert(LAWPContributionPool.LAWPContributionPool__EngineInvalidPool.selector);
         contributionPool.createPool(0, GOAL, startTime, endTime);
     }
 
@@ -479,6 +479,13 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         assertEq(contributionPool.getContribution(poolId, userA).wadShare, 1e18);
     }
 
+    function test_Settle_Succeed_even_If_WindowNotClosed() public {
+        uint256 poolId = _createAndFundPool();
+        // Window still open, This is allowed - settle() is onlyOwner, so the owner can settle early if desired.
+        vm.prank(admin);
+        contributionPool.settle(poolId);
+    }
+
     function test_Settle_OnlyOwner_NotByAttacker() public {
         uint256 poolId = _createAndFundPool();
         _warpPastDeadline();
@@ -496,14 +503,6 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         vm.prank(admin);
         vm.expectRevert(LAWPContributionPool.LAWPContributionPool__InvalidPool.selector);
         contributionPool.settle(999);
-    }
-
-    function test_Settle_RevertIf_WindowNotClosed() public {
-        uint256 poolId = _createAndFundPool();
-        // Window still open
-        vm.prank(admin);
-        vm.expectRevert(LAWPContributionPool.LAWPContributionPool__WindowNotClosed.selector);
-        contributionPool.settle(poolId);
     }
 
     function test_Settle_RevertIf_GoalNotMet() public {

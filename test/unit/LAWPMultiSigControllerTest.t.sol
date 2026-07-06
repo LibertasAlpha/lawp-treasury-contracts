@@ -475,7 +475,7 @@ contract LAWPMultiSigControllerTest is LAWPTestBase {
         vm.prank(relayer);
         controller.executeProposal(1, 1, amount, LAWPStructs.FlowType.RoC, deadline, sigs1);
 
-        // Replay with proposal 2 (different id, same payload): different digest → not blocked
+        // Replay with proposal 2 (different id, same payload): different digest -> not blocked
         // But pool 1 RoC can be routed again as a new proposal
         cngn.mintTest(relayer, amount); // top up for second routing
         bytes memory sigs2 = _buildSignatures(digest2, sortedPks);
