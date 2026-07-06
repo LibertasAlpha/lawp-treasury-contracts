@@ -295,6 +295,8 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
         }
     }
 
+    /// @notice Normalizes the recovery byte `v` to standard Ethereum values (27 or 28).
+    /// @dev Supports EIP-2098 compact signatures and certain hardware wallets that output `v` as 0 or 1.
     function _normaliseV(uint8 v) private pure returns (uint8) {
         // Normalize v if necessary (some hardware wallets output 0 or 1 instead of 27 or 28)
         if (v < 27) v += 27;

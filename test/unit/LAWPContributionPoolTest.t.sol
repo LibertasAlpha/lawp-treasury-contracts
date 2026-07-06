@@ -864,4 +864,14 @@ contract LAWPContributionPoolTest is LAWPTestBase {
         uint256 poolId = _createStandardPool();
         assertEq(contributionPool.getContributors(poolId).length, 0);
     }
+
+    function test_GetContributionZeroPoolId() public {
+        vm.expectRevert(LAWPContributionPool.LAWPContributionPool__InvalidPool.selector);
+        contributionPool.getContribution(0, userA);
+    }
+
+    function test_GetContributorsZeroPoolId() public {
+        vm.expectRevert(LAWPContributionPool.LAWPContributionPool__InvalidPool.selector);
+        contributionPool.getContributors(0);
+    }
 }

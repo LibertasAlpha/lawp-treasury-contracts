@@ -40,6 +40,17 @@ interface ILAWPComplianceEngine {
     /// @notice Emitted when a new contribution is processed and capital is safely locked.
     event CapitalPooled(uint256 indexed poolId, uint256 grossAmount, uint256 riskFeeDeducted);
 
+    /// @notice Emitted after all contributor shares are minted for a pool, confirming that the
+    ///         sum of all minted netPrincipal values exactly equals the pool's net capital.
+    ///         This is a machine-verifiable on-chain proof of Invariant:
+    ///         Σ(TokenData.netPrincipal for poolId) == poolTotalPrincipal[poolId].
+    /// @param poolId      The pool that was just fully minted.
+    /// @param netCapital  The pool's total net capital (the expected sum).
+    /// @param mintedSum   The actual sum of all minted netPrincipal values (must equal netCapital).
+    event PrincipalIntegrityVerified(
+        uint256 indexed poolId, uint256 netCapital, uint256 mintedSum
+    );
+
     /// @notice Emitted when off-chain revenue is mathematically allocated and routed.
     event OperationalAllocationRouted(
         uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount
@@ -47,6 +58,9 @@ interface ILAWPComplianceEngine {
 
     /// @notice Emitted when an operational actor (LA2, Dev, etc.) pulls their allocated funds.
     event OperationalFundsClaimed(address indexed wallet, uint256 amount);
+
+    /// @notice Emitted when an operational balance is migrated from an old wallet to a new wallet.
+    event OperationalBalanceMigrated(address indexed from, address indexed to, uint256 amount);
 
     /// @notice Emitted when a Contributor pulls their proportional yield and RoC.
     event YieldClaimed(
@@ -102,10 +116,15 @@ interface ILAWPComplianceEngine {
                            PULL-OVER-PUSH CLAIMS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Allows the admin to migrate an operational balance to a new wallet.
+    /// @dev Only callable by the owner (Admin Safe). Conserves the total operational balance.
+    /// @param _from The old operational actor's wallet address.
+    /// @param _to The new operational actor's wallet address.
+    function migrateOperationalBalance(address _from, address _to) external;
+
     /// @notice Allows operational teams to claim their allocated revenue splits.
     /// @dev Relies on the `operationalBalances` ledger. Follows strict CEI pattern.
-    /// @param _wallet The operational actor's wallet address. Can be LA2, Dev, etc.
-    function claimOperationalFunds(address _wallet) external;
+    function claimOperationalFunds() external;
 
     /// @notice Allows an investor to pull their accrued yield for a specific token.
     /// @dev Calculates un-claimed yield against the O(1) `poolYieldTracker`.

@@ -218,6 +218,22 @@ contract LAWPMultiSigControllerTest is LAWPTestBase {
         assertTrue(d1 != d3, "Different poolId must yield different digest");
     }
 
+    function test_EIP712DomainDigestMatch() public view {
+        (
+            ,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            ,
+
+        ) = controller.eip712Domain();
+        assertEq(name, "LAWP MultiSig");
+        assertEq(version, "1");
+        assertEq(chainId, block.chainid);
+        assertEq(verifyingContract, address(controller));
+    }
+
     /*//////////////////////////////////////////////////////////////
                       EXECUTE PROPOSAL TESTS
     //////////////////////////////////////////////////////////////*/

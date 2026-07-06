@@ -247,18 +247,22 @@ contract LAWPImpactTokenTest is Test {
         assertFalse(mockEngine.claimYieldCalled(), "Hook must NOT fire on mint");
     }
 
-    function test_TransferHook_DoesNotFireWhenNoYieldPending() public {
+    /// @dev After C-1 fix: the hook always calls claimYield (no pre-check gate).
+    ///      The engine handles the zero-yield case silently. The transfer must succeed.
+    function test_TransferHook_AlwaysCallsClaimYield_EvenWithZeroYield() public {
         vm.prank(address(mockEngine));
         token.mint(userA, 90_000e6, 1e18, 1);
 
-        // pendingYield == 0 -> hook must silently skip
+        // pendingYield == 0 - hook now calls claimYield unconditionally.
+        // The engine returns silently; transfer still succeeds.
         mockEngine.setPendingYield(0);
 
         vm.prank(userA);
         token.transferFrom(userA, userB, 1);
 
-        assertFalse(mockEngine.claimYieldCalled(), "Hook must NOT fire when yield == 0");
-        assertEq(token.ownerOf(1), userB);
+        // claimYield IS called (no pre-check guard in _update anymore)
+        assertTrue(mockEngine.claimYieldCalled(), "Hook MUST always call claimYield");
+        assertEq(token.ownerOf(1), userB, "Transfer must succeed regardless of yield state");
     }
 
     function test_TransferHook_FiresWhenYieldPending() public {
@@ -272,6 +276,60 @@ contract LAWPImpactTokenTest is Test {
 
         assertTrue(mockEngine.claimYieldCalled(), "Hook MUST fire when yield > 0");
         assertEq(token.ownerOf(1), userB);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SECURITY REGRESSION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Verifies Guarantee #2: a reverting claimYield must NEVER block a token transfer.
+    ///      Simulates the TOCTOU scenario where yield is drained between hook invocation and
+    ///      execution, causing the engine to revert. The try/catch in _update must absorb it.
+    function test_TransferNeverBlocked_WhenClaimYieldReverts() public {
+        vm.prank(address(mockEngine));
+        token.mint(userA, 90_000e6, 1e18, 1);
+
+        // Force claimYield to always revert (simulates TOCTOU race or vault shortfall)
+        mockEngine.setClaimYieldShouldRevert(true);
+
+        // Transfer must still succeed - the try/catch absorbs the revert
+        vm.prank(userA);
+        token.transferFrom(userA, userB, 1);
+
+        assertEq(token.ownerOf(1), userB, "Transfer must succeed even when claimYield reverts");
+    }
+
+    /// @dev Verifies that _update does NOT call calculateProportionalYield.
+    ///      Uses a tracking mock that distinguishes between the two calls.
+    function test_HookDoesNotCallCalculateProportionalYield() public {
+        TrackingMockEngine trackingEngine = new TrackingMockEngine();
+
+        vm.prank(admin);
+        token.setComplianceEngine(address(trackingEngine));
+
+        vm.prank(address(trackingEngine));
+        token.mint(userA, 90_000e6, 1e18, 1);
+
+        vm.prank(userA);
+        token.transferFrom(userA, userB, 1);
+
+        assertFalse(
+            trackingEngine.calculateProportionalYieldCalled(),
+            "_update must NOT call calculateProportionalYield after C-1 fix"
+        );
+        assertTrue(
+            trackingEngine.claimYieldCalled(),
+            "_update MUST call claimYield directly (no pre-check gate)"
+        );
+    }
+
+    /// @dev Verifies that mint path (from == address(0)) does not trigger the hook.
+    ///      Regression guard: existing behaviour preserved after the changes.
+    function test_HookDoesNotFireOnMint_Regression() public {
+        vm.prank(address(mockEngine));
+        token.mint(userA, 90_000e6, 1e18, 1);
+        // After mint, claimYieldCalled should still be false (hook only fires on transfers)
+        assertFalse(mockEngine.claimYieldCalled(), "Hook MUST NOT fire on mint");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -350,5 +408,35 @@ contract LAWPImpactTokenTest is Test {
 
         LAWPStructs.TokenData memory data = token.getTokenData(tokenId);
         assertLe(data.rocReturned, data.netPrincipal);
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+              C-1 HELPER: TRACKING MOCK ENGINE
+//////////////////////////////////////////////////////////////*/
+
+/// @title TrackingMockEngine
+/// @notice Independently tracks calculateProportionalYield and claimYield call counts.
+///         Used by test_C1_HookDoesNotCallCalculateProportionalYield to assert that
+///         the fixed _update no longer calls calculateProportionalYield.
+contract TrackingMockEngine {
+    bool public calculateProportionalYieldCalled;
+    bool public claimYieldCalled;
+
+    function calculateProportionalYield(uint256) external returns (uint256) {
+        calculateProportionalYieldCalled = true;
+        return 0;
+    }
+
+    function claimYield(uint256) external {
+        claimYieldCalled = true;
+    }
+
+    /// @notice Allows this mock to act as the minting authority for test setup.
+    function mint(address token, address to, uint256 principal, uint256 wad, uint256 poolId)
+        external
+        returns (uint256)
+    {
+        return LAWPImpactToken(token).mint(to, principal, wad, poolId);
     }
 }

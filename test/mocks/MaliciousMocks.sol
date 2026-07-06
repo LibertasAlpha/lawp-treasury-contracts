@@ -75,13 +75,13 @@ contract ReentrantOperationalClaimer {
 
     function attack() external {
         attackFired = false;
-        engine.claimOperationalFunds(msg.sender);
+        engine.claimOperationalFunds();
     }
 
     receive() external payable {
         if (!attackFired) {
             attackFired = true;
-            engine.claimOperationalFunds(msg.sender); // Must revert
+            engine.claimOperationalFunds(); // Must revert
         }
     }
 }
@@ -152,20 +152,30 @@ contract MaliciousERC20 is IERC20 {
 /// @title MockEngineWithCalculateYield
 /// @notice A mock compliance engine for ImpactToken tests that returns a controllable
 ///         pending yield value and tracks claimYield calls.
+/// @dev After C-1 fix: `_update` no longer calls `calculateProportionalYield`.
+///      The `claimYieldShouldRevert` flag lets tests verify that the hook's try/catch
+///      absorbs a failing claimYield without blocking the transfer.
 contract MockEngineWithCalculateYield {
     bool public claimYieldCalled;
     uint256 public pendingYieldToReturn;
     address public lastClaimedFor;
+    bool public claimYieldShouldRevert;
 
     function setPendingYield(uint256 _amount) external {
         pendingYieldToReturn = _amount;
     }
 
+    function setClaimYieldShouldRevert(bool _shouldRevert) external {
+        claimYieldShouldRevert = _shouldRevert;
+    }
+
+    /// @notice Still present for direct test calls; no longer invoked by _update.
     function calculateProportionalYield(uint256) external view returns (uint256) {
         return pendingYieldToReturn;
     }
 
     function claimYield(uint256) external {
+        if (claimYieldShouldRevert) revert("MockEngine: claimYield forced revert");
         claimYieldCalled = true;
         lastClaimedFor = msg.sender;
     }

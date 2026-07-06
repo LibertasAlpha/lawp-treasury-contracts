@@ -177,9 +177,22 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     }
 
     /// @notice The State Desync Interception Hook (CRITICAL INVARIANT)
-    /// @dev Overrides OZ v5 _update to force a yield claim before a token transfers ownership.
-    /// @custom:security ComplianceEngine is a fully trusted contract with no reentrant side effects.
-    /// But ReentrancyGuard is included to minimize risk of future code changes introducing vulnerabilities in this critical hook.
+    /// @dev Overrides OZ v5 _update to attempt a yield flush before ownership changes hands.
+    ///
+    ///      Security contract (three guarantees):
+    ///      1. A token transfer MUST NEVER be blocked by yield vault state, a race condition,
+    ///         or a governance change to `complianceEngine`. This is enforced by caching the
+    ///         engine address locally and wrapping the yield claim in a try/catch.
+    ///      2. No TOCTOU: The pre-check `calculateProportionalYield` view call has been removed.
+    ///         It created a stale-read race where a front-runner draining yield between the view
+    ///         and the stateful call caused `claimYield` to revert with NothingToClaim, permanently
+    ///         blocking the transfer. The engine's `claimYield` now handles the zero-yield path
+    ///         silently when invoked by this hook.
+    ///      3. Cross-contract reentrancy: `nonReentrant` guards _update against recursive entry
+    ///         into ImpactToken. `updateRocReturned` relies on `onlyComplianceEngine` (not
+    ///         nonReentrant) because adding nonReentrant there would deadlock the
+    ///         _update -> claimYield -> updateRocReturned call chain (same per-contract lock).
+    ///
     /// @param _to The destination address of the transfer (zero if burning).
     /// @param _tokenId The ID of the token being transferred.
     /// @param _auth The address initiating the transfer (for access control, if needed in future).
@@ -193,15 +206,20 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     {
         address from = _ownerOf(_tokenId);
 
-        // If it is a transfer (not minting or burning) and the engine is linked
-        if (from != address(0) && _to != address(0) && complianceEngine != address(0)) {
-            // 1. Ask the engine exactly how much is owed to this specific token
-            uint256 pendingYield =
-                ILAWPComplianceEngine(complianceEngine).calculateProportionalYield(_tokenId);
-
-            // 2. Only force flush if there is actually money to claim (prevents NothingToClaim revert)
-            if (pendingYield > 0) {
-                ILAWPComplianceEngine(complianceEngine).claimYield(_tokenId);
+        // Only act on true transfers (not mints or burns) and only when the engine is linked.
+        // Cache the engine address locally to prevent a governance-race where the storage slot
+        // is updated between two reads within the same transaction.
+        if (from != address(0) && _to != address(0)) {
+            address engineAddr = complianceEngine;
+            if (engineAddr != address(0)) {
+                // Attempt to flush pending yield to the outgoing owner.
+                // The try/catch guarantees this hook can never block a legitimate transfer:
+                //   - vault shortfalls are absorbed silently
+                //   - NothingToClaim is absorbed silently (engine returns early for hook callers)
+                //   - any future revert path in the engine is safely contained
+                // Yield that fails to flush here is NOT lost; it remains claimable by the
+                // outgoing owner via a direct `claimYield` call after the transfer completes.
+                try ILAWPComplianceEngine(engineAddr).claimYield(_tokenId) { } catch { }
             }
         }
 

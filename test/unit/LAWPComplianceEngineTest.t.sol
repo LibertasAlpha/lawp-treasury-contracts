@@ -129,6 +129,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
     function test_SetMultiSigController_Success() public {
         vm.prank(admin);
+        vm.etch(address(99), hex"00");
         engine.setMultiSigController(address(99));
         assertEq(engine.multiSigController(), address(99));
     }
@@ -141,6 +142,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
     function test_SetMultiSigController_RevertIf_NotOwner() public {
         vm.prank(attacker);
+        vm.etch(address(99), hex"00");
         vm.expectRevert();
         engine.setMultiSigController(address(99));
     }
@@ -191,6 +193,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     ///         for engine-specific edge case revert testing.
     function _switchToTempPool() internal returns (address tempPool) {
         tempPool = address(1234);
+        vm.etch(tempPool, hex"00");
         vm.prank(admin);
         engine.setContributionPool(tempPool);
     }
@@ -620,6 +623,16 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         engine.claimYield(1);
     }
 
+    function test_ClaimYield_RevertIf_Paused() public {
+        _setupStandardDeposit();
+        vm.prank(admin);
+        engine.emergencyPause();
+
+        vm.prank(userA);
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        engine.claimYield(1);
+    }
+
     /*//////////////////////////////////////////////////////////////
                        CLAIM YIELD BATCH TESTS
     //////////////////////////////////////////////////////////////*/
@@ -666,6 +679,19 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         engine.claimYieldBatch(tokens);
     }
 
+    function test_ClaimYieldBatch_RevertIf_Paused() public {
+        _setupStandardDeposit();
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+
+        vm.prank(admin);
+        engine.emergencyPause();
+
+        vm.prank(userA);
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        engine.claimYieldBatch(ids);
+    }
+
     /*//////////////////////////////////////////////////////////////
                     CLAIM OPERATIONAL FUNDS TESTS
     //////////////////////////////////////////////////////////////*/
@@ -676,7 +702,7 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
         uint256 balBefore = cngn.balanceOf(la2Wallet);
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds(la2Wallet);
+        engine.claimOperationalFunds();
 
         assertEq(cngn.balanceOf(la2Wallet), balBefore + 5_000e6);
         assertEq(engine.operationalBalances(la2Wallet), 0);
@@ -686,18 +712,71 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     function test_ClaimOperationalFunds_CEI_ZeroBeforeTransfer() public {
         _setupGrantInitial(10_000e6);
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds(la2Wallet);
+        engine.claimOperationalFunds();
 
         // Second claim must fail - balance zeroed before transfer
         vm.prank(la2Wallet);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_NoOperationalFunds.selector);
-        engine.claimOperationalFunds(la2Wallet);
+        engine.claimOperationalFunds();
     }
 
     function test_ClaimOperationalFunds_RevertIf_NothingToClaim() public {
         vm.prank(attacker);
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_NoOperationalFunds.selector);
-        engine.claimOperationalFunds(attacker);
+        engine.claimOperationalFunds();
+    }
+
+    function test_ClaimOperationalFunds_RevertIf_Paused() public {
+        _setupStandardDeposit();
+
+        vm.prank(admin);
+        engine.emergencyPause();
+
+        vm.prank(operationalTreasuryWallet);
+        vm.expectRevert(abi.encodeWithSignature("EnforcedPause()"));
+        engine.claimOperationalFunds();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     MIGRATE OPERATIONAL BALANCE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_MigrateOperationalBalance_Success() public {
+        _setupGrantInitial(10_000e6); // la2 gets 5_000e6
+        assertEq(engine.operationalBalances(la2Wallet), 5_000e6);
+        assertEq(engine.operationalBalances(userC), 0);
+
+        vm.prank(admin);
+        engine.migrateOperationalBalance(la2Wallet, userC);
+
+        assertEq(engine.operationalBalances(la2Wallet), 0);
+        assertEq(engine.operationalBalances(userC), 5_000e6);
+
+        // userC can now claim
+        uint256 balBefore = cngn.balanceOf(userC);
+        vm.prank(userC);
+        engine.claimOperationalFunds();
+        assertEq(cngn.balanceOf(userC), balBefore + 5_000e6);
+    }
+
+    function test_MigrateOperationalBalance_RevertIfNotOwner() public {
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", attacker));
+        engine.migrateOperationalBalance(la2Wallet, userC);
+    }
+
+    function test_MigrateOperationalBalance_ZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_ZeroAddress.selector);
+        engine.migrateOperationalBalance(address(0), userC);
+    }
+
+    function test_MigrateOperationalBalance_ZeroBalance() public {
+        assertEq(engine.operationalBalances(la2Wallet), 0);
+        vm.prank(admin);
+        engine.migrateOperationalBalance(la2Wallet, userC);
+        assertEq(engine.operationalBalances(la2Wallet), 0);
+        assertEq(engine.operationalBalances(userC), 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -851,4 +930,92 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
         vm.expectRevert(LAWPComplianceEngine.LAWPComplianceEngine_InvalidWAD.selector);
         engine.processPoolDeposit(1, 100_000e6, c, w);
     }
+
+    /*//////////////////////////////////////////////////////////////
+              C-2 SECURITY REGRESSION TESTS
+         Principal Sum Invariant (Invariant I-8)
+    //////////////////////////////////////////////////////////////*/    /// @dev Invariant I-8: Sum of all minted netPrincipal for a pool must exactly equal
+    ///      poolTotalPrincipal[poolId]. Verifies with a 2-contributor, non-round-number pool.
+    function test_C2_SumNetPrincipal_ExactlyEqualsPoolPrincipal_TwoContributors() public {
+        uint256 gross = 123_456_789e6; // Deliberately non-round
+
+        uint256 expectedNet = gross - (gross * RISK_FEE_BPS) / 10_000;
+
+        // WADs: floor-divided on gross. Last contributor absorbs WAD dust.
+        uint256 wadA = (70_000_000e6 * 1e18) / gross;
+        uint256 wadB = 1e18 - wadA; // remainder absorbs WAD dust
+
+        address tempPool = _switchToTempPool();
+
+        // Fund tempPool and approve the engine — required for the safeTransferFrom in processPoolDeposit
+        cngn.mintTest(tempPool, gross);
+        vm.prank(tempPool);
+        cngn.approve(address(engine), gross);
+
+        address[] memory c = new address[](2);
+        c[0] = userA;
+        c[1] = userB;
+        uint256[] memory w = new uint256[](2);
+        w[0] = wadA;
+        w[1] = wadB;
+
+        vm.prank(tempPool);
+        engine.processPoolDeposit(1, gross, c, w);
+
+        // Read back the two tokens and sum their netPrincipals
+        LAWPStructs.TokenData memory dataA = impactToken.getTokenData(1);
+        LAWPStructs.TokenData memory dataB = impactToken.getTokenData(2);
+        uint256 sumPrincipal = dataA.netPrincipal + dataB.netPrincipal;
+
+        assertEq(
+            sumPrincipal,
+            engine.poolTotalPrincipal(1),
+            "I-8: sum(netPrincipal) must equal poolTotalPrincipal exactly"
+        );
+        assertEq(sumPrincipal, expectedNet, "I-8: sum(netPrincipal) must equal expectedNet exactly");
+    }
+
+    /// @dev Single-contributor pool: WAD = 1e18, netPrincipal must equal poolTotalPrincipal exactly.
+    function test_C2_SumNetPrincipal_ExactlyEqualsPoolPrincipal_SingleContributor() public {
+        uint256 gross = 77_777_777e6;
+        uint256 expectedNet = gross - (gross * RISK_FEE_BPS) / 10_000;
+
+        address tempPool = _switchToTempPool();
+
+        cngn.mintTest(tempPool, gross);
+        vm.prank(tempPool);
+        cngn.approve(address(engine), gross);
+
+        (address[] memory c, uint256[] memory w) = _singleContributor(userA);
+
+        vm.prank(tempPool);
+        engine.processPoolDeposit(1, gross, c, w);
+
+        LAWPStructs.TokenData memory data = impactToken.getTokenData(1);
+
+        assertEq(data.netPrincipal, engine.poolTotalPrincipal(1), "I-8: single contributor mismatch");
+        assertEq(data.netPrincipal, expectedNet, "I-8: single contributor net mismatch");
+    }
+
+    /// @dev Verifies that PrincipalIntegrityVerified event is emitted with mintedSum == netCapital.
+    ///      Uses the standard ContributionPool settle flow so approvals are handled correctly.
+    function test_C2_PrincipalIntegrityVerified_EventEmitted() public {
+        uint256 gross = 100_000e6;
+        uint256 expectedNet = gross - (gross * RISK_FEE_BPS) / 10_000; // 90_000e6
+
+        // Use the standard pool flow (ContributionPool handles approvals internally)
+        uint256 poolId = _createContribPool(1, gross, block.timestamp, block.timestamp + 1 hours);
+        _contribute(userA, poolId, 60_000e6);
+        _contribute(userB, poolId, 40_000e6);
+        vm.warp(block.timestamp + 1 hours + 1);
+
+        // Expect the PrincipalIntegrityVerified event on settle
+        vm.expectEmit(true, false, false, true, address(engine));
+        emit PrincipalIntegrityVerified(1, expectedNet, expectedNet);
+
+        _settlePool(poolId);
+    }
+
+    // Declare the event locally for test expectation matching
+    event PrincipalIntegrityVerified(uint256 indexed poolId, uint256 netCapital, uint256 mintedSum);
 }

@@ -51,6 +51,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     error LAWPComplianceEngine_ZeroAddressInjector();
     error LAWPComplianceEngine_InvalidPool();
     error LAWPComplianceEngine_ZeroActualReceived();
+    error LAWPComplianceEngine_PrincipalMintingMismatch(uint256 expected, uint256 actual);
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -211,7 +212,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @notice Sets the operational Multi-Sig Controller address.
     /// @param _multiSig The address of the authorized Multi-Sig wallet.
     function setMultiSigController(address _multiSig) external onlyOwner {
-        if (_multiSig == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        _requireContract(_multiSig);
         address oldController = multiSigController;
         multiSigController = _multiSig;
 
@@ -221,7 +222,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @notice Sets the operational Contribution Pool address.
     /// @param _contributionPool The address of the authorized Contribution Pool.
     function setContributionPool(address _contributionPool) external onlyOwner {
-        if (_contributionPool == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        _requireContract(_contributionPool);
         address oldPool = contributionPool;
         contributionPool = _contributionPool;
 
@@ -316,7 +317,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         // 6. Credit the internal pull-ledger for the Operational Treasury.
         //    riskFee + netCapital always reconstructs to actualReceived (no wei lost).
-        if (riskFee > 0) operationalBalances[opTreasury] += riskFee;
+        operationalBalances[opTreasury] += riskFee;
         operationalBalances[opTreasury] += netCapital;
 
         // 7. Write the immutable RoC ceiling for this pool.
@@ -326,9 +327,22 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         emit RiskFeeAssessed(_poolId, actualReceived, riskFee, netCapital);
 
         // 8. Mint fractional shares to contributors based on actual net capital.
-        _mintContributorShares(_poolId, netCapital, _contributors, _wadShares, contributorsLength);
+        //    The function returns the sum of all minted netPrincipal values so we can
+        //    assert Invariant I-8: mintedSum must equal netCapital exactly.
+        uint256 mintedSum =
+            _mintContributorShares(_poolId, netCapital, _contributors, _wadShares, contributorsLength);
+
+        // Post-mint assertion: dust absorption must be exact, never lossy.
+        // This is a zero-cost invariant guard - it should never fire in correct operation
+        // but will catch any future regression in the minting arithmetic.
+        if (mintedSum != netCapital) {
+            revert LAWPComplianceEngine_PrincipalMintingMismatch(netCapital, mintedSum);
+        }
 
         emit CapitalPooled(_poolId, actualReceived, riskFee);
+
+        // Emit on-chain proof of principal conservation for off-chain verifiers.
+        emit PrincipalIntegrityVerified(_poolId, netCapital, mintedSum);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -378,20 +392,39 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
-    function claimOperationalFunds(address _wallet) external override nonReentrant {
-        uint256 amount = operationalBalances[_wallet];
-        if (amount == 0) revert LAWPComplianceEngine_NoOperationalFunds();
-
-        // Strict CEI Pattern
-        operationalBalances[_wallet] = 0;
-
-        operationalVault.executeTransfer(_wallet, amount);
-
-        emit OperationalFundsClaimed(_wallet, amount);
+    function migrateOperationalBalance(address _from, address _to) external override onlyOwner {
+        if (_from == address(0) || _to == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        uint256 amount = operationalBalances[_from];
+        if (amount > 0) {
+            operationalBalances[_from] = 0;
+            operationalBalances[_to] += amount;
+            emit OperationalBalanceMigrated(_from, _to, amount);
+        }
     }
 
     /// @inheritdoc ILAWPComplianceEngine
-    function claimYield(uint256 _tokenId) external override nonReentrant {
+    function claimOperationalFunds() external override whenNotPaused nonReentrant {
+        uint256 amount = operationalBalances[msg.sender];
+        if (amount == 0) revert LAWPComplianceEngine_NoOperationalFunds();
+
+        // Strict CEI Pattern
+        operationalBalances[msg.sender] = 0;
+
+        operationalVault.executeTransfer(msg.sender, amount);
+
+        emit OperationalFundsClaimed(msg.sender, amount);
+    }
+
+    /// @inheritdoc ILAWPComplianceEngine
+    /// @dev Dual-path behavior based on caller:
+    ///      - Direct call (msg.sender == tokenOwner): reverts with NothingToClaim if yield is zero.
+    ///        This provides explicit feedback to the user that there is nothing to pull.
+    ///      - Hook call (msg.sender == address(impactToken)): returns silently if yield is zero.
+    ///        This prevents the transfer hook from blocking a legitimate token transfer due to a
+    ///        TOCTOU race where yield was drained between the hook's invocation and this call.
+    ///        The hook wraps this call in try/catch, so this silent return is a belt-and-suspenders
+    ///        guard for clarity and forward compatibility.
+    function claimYield(uint256 _tokenId) external override whenNotPaused nonReentrant {
         address tokenOwner = impactToken.ownerOf(_tokenId);
 
         if (msg.sender != tokenOwner && msg.sender != address(impactToken)) {
@@ -399,14 +432,20 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         }
 
         uint256 totalClaim = _claimYieldForToken(_tokenId, tokenOwner);
-        if (totalClaim == 0) revert LAWPComplianceEngine_NothingToClaim();
+
+        if (totalClaim == 0) {
+            // Hook path: return silently. The transfer must not be blocked.
+            if (msg.sender == address(impactToken)) return;
+            // Direct user path: revert with explicit feedback.
+            revert LAWPComplianceEngine_NothingToClaim();
+        }
 
         // Single external transfer to the token owner
         yieldVault.executeTransfer(tokenOwner, totalClaim);
     }
 
     /// @inheritdoc ILAWPComplianceEngine
-    function claimYieldBatch(uint256[] calldata _tokenIds) external override nonReentrant {
+    function claimYieldBatch(uint256[] calldata _tokenIds) external override whenNotPaused nonReentrant {
         uint256 length = _tokenIds.length;
         if (length > MAX_BATCH_CLAIM) revert LAWPComplianceEngine_BatchTooLarge();
 
@@ -437,14 +476,11 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
                                PRIVATE HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _routeRoC(uint256 _poolId, uint256 _totalAmount, address _fundProvider) private {
-        // Conservative cap pre-check on the requested amount.
-        // Actual tracking (below) uses actualRocReceived which is always ≤ _totalAmount.
-        uint256 rocCap = poolTotalPrincipal[_poolId];
-        if (poolRocTracker[_poolId] + _totalAmount > rocCap) {
-            revert LAWPComplianceEngine_ExceedsPrincipalCap();
-        }
+    function _requireContract(address addr) internal view {
+        if (addr.code.length == 0) revert LAWPComplianceEngine_ZeroAddress();
+    }
 
+    function _routeRoC(uint256 _poolId, uint256 _totalAmount, address _fundProvider) private {
         // Balance-delta: snapshot -> transfer -> measure.
         uint256 yieldBalBefore = cNGNToken.balanceOf(address(yieldVault));
         cNGNToken.safeTransferFrom(_fundProvider, address(yieldVault), _totalAmount);
@@ -453,6 +489,11 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         // Track actual routed RoC, not requested amount.
         poolRocTracker[_poolId] += actualRocReceived;
+        
+        // Post-transfer hard-stop assertion
+        if (poolRocTracker[_poolId] > poolTotalPrincipal[_poolId]) {
+            revert LAWPComplianceEngine_ExceedsPrincipalCap();
+        }
     }
 
     function _routeGrantInitial(uint256 _totalAmount, address _fundProvider, uint256 _poolId)
@@ -688,26 +729,39 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     ///      share_i = floor(amount_i / totalRaised × 1e18)
     ///      The last contributor absorbs rounding dust so sum(wadShares) == 1e18 exactly.
     ///      Net principal is allocated proportionally using contributor WAD shares.
+    ///
+    ///      Two independent dust-absorption patterns exist here:
+    ///      - WAD dust: the last contributor receives (1e18 - Σ(floor slices))
+    ///      - Capital dust: the last contributor receives (_netCapital - Σ(WAD-proportional slices))
+    ///      These two remainder values are mathematically correlated (uniform fee rate guarantees
+    ///      gross-proportional == net-proportional), but are computed independently.
+    ///      The returned `mintedSum` allows the caller to assert they are exactly equal to
+    ///      `_netCapital`, enforcing Invariant I-8 as a hard post-condition.
+    ///
+    /// @return mintedSum  The exact sum of all minted netPrincipal values.
+    ///                    The caller MUST assert mintedSum == _netCapital.
     function _mintContributorShares(
         uint256 _poolId,
         uint256 _netCapital,
         address[] calldata _contributors,
         uint256[] calldata _wadShares,
         uint256 _contributorsLength
-    ) internal {
+    ) internal returns (uint256 mintedSum) {
         uint256 remainingCapital = _netCapital;
         uint256 lastIndex = _contributorsLength - 1;
 
         for (uint256 i; i < _contributorsLength;) {
+            uint256 userNetPrincipal;
             if (i == lastIndex) {
-                // Final contributor absorbs any dust to maintain exact total principal integrity.
-                impactToken.mint(_contributors[i], remainingCapital, _wadShares[i], _poolId);
+                // Final contributor absorbs any capital dust to maintain exact total integrity.
+                userNetPrincipal = remainingCapital;
             } else {
                 // WAD-proportional principal: preserves exact fractional ownership.
-                uint256 userNetPrincipal = (_netCapital * _wadShares[i]) / TOTAL_SHARES;
+                userNetPrincipal = (_netCapital * _wadShares[i]) / TOTAL_SHARES;
                 remainingCapital -= userNetPrincipal;
-                impactToken.mint(_contributors[i], userNetPrincipal, _wadShares[i], _poolId);
             }
+            impactToken.mint(_contributors[i], userNetPrincipal, _wadShares[i], _poolId);
+            mintedSum += userNetPrincipal;
             unchecked {
                 ++i;
             }

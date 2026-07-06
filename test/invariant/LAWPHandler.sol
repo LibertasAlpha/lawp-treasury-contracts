@@ -667,7 +667,7 @@ contract LAWPHandler is Test {
     ///         their allocated share from the OperationalVault.
     ///
     /// @dev WHAT HAPPENS ON-CHAIN:
-    ///      engine.claimOperationalFunds(_wallet)
+    ///      engine.claimOperationalFunds()
     ///        - Reads operationalBalances[_wallet]
     ///        - Zeroes the ledger entry (CEI - state before interaction)
     ///        - operationalVault.executeTransfer(_wallet, amount)
@@ -685,8 +685,9 @@ contract LAWPHandler is Test {
 
         uint256 walletBalBefore = cngn.balanceOf(wallet);
 
-        // Execute the claim - note engine.claimOperationalFunds takes _wallet param.
-        engine.claimOperationalFunds(wallet);
+        // Execute the claim
+        vm.prank(wallet);
+        engine.claimOperationalFunds();
 
         // Update ghost: opVault outflow
         ghost_opVaultOutflow += balance;

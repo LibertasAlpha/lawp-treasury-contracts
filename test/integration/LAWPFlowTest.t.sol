@@ -111,7 +111,7 @@ contract LAWPFlowTest is LAWPTestBase {
         // STEP 6: LA2 claims operational funds
         uint256 la2BalBefore = cngn.balanceOf(la2Wallet);
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds(la2Wallet);
+        engine.claimOperationalFunds();
 
         assertEq(cngn.balanceOf(la2Wallet), la2BalBefore + la2Split + 11_000e6);
         assertEq(engine.operationalBalances(la2Wallet), 0);
@@ -342,11 +342,11 @@ contract LAWPFlowTest is LAWPTestBase {
         uint256 devBal = cngn.balanceOf(devWallet);
 
         vm.prank(la2Wallet);
-        engine.claimOperationalFunds(la2Wallet);
+        engine.claimOperationalFunds();
         vm.prank(mvi1Wallet);
-        engine.claimOperationalFunds(mvi1Wallet);
+        engine.claimOperationalFunds();
         vm.prank(devWallet);
-        engine.claimOperationalFunds(devWallet);
+        engine.claimOperationalFunds();
 
         assertEq(cngn.balanceOf(la2Wallet), la2Bal + 5_500e6);
         assertEq(cngn.balanceOf(mvi1Wallet), mviBal + 2_500e6);

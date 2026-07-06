@@ -427,13 +427,13 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         override
         returns (ContributionRecord memory)
     {
-        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
+        if (_poolId == 0 || _poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
         return _contributions[_poolId][_contributor];
     }
 
     /// @inheritdoc ILAWPContributionPool
     function getContributors(uint256 _poolId) external view override returns (address[] memory) {
-        if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
+        if (_poolId == 0 || _poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
         return _contributorLists[_poolId];
     }
 }
