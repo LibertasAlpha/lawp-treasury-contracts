@@ -40,17 +40,6 @@ interface ILAWPComplianceEngine {
     /// @notice Emitted when a new contribution is processed and capital is safely locked.
     event CapitalPooled(uint256 indexed poolId, uint256 grossAmount, uint256 riskFeeDeducted);
 
-    /// @notice Emitted after all contributor shares are minted for a pool, confirming that the
-    ///         sum of all minted netPrincipal values exactly equals the pool's net capital.
-    ///         This is a machine-verifiable on-chain proof of Invariant:
-    ///         Σ(TokenData.netPrincipal for poolId) == poolTotalPrincipal[poolId].
-    /// @param poolId      The pool that was just fully minted.
-    /// @param netCapital  The pool's total net capital (the expected sum).
-    /// @param mintedSum   The actual sum of all minted netPrincipal values (must equal netCapital).
-    event PrincipalIntegrityVerified(
-        uint256 indexed poolId, uint256 netCapital, uint256 mintedSum
-    );
-
     /// @notice Emitted when off-chain revenue is mathematically allocated and routed.
     event OperationalAllocationRouted(
         uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount

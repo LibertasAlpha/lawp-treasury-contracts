@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
 import { ILAWPContributionPool } from "../interfaces/ILAWPContributionPool.sol";
 import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title LAWPContributionPool
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Permissionless, time-bound, goal-gated contribution pool for the LAWP Protocol.
 /// @dev Replaces the off-chain assembly of contributor arrays with a transparent, on-chain
-///      escrow that records individual contributions, computes pro-rata BPS shares at
+///      escrow that records individual contributions, computes pro-rata WAD shares at
 ///      settlement time, and routes capital to the ComplianceEngine's permissionless
 ///      processPoolDeposit in a single atomic call.
 ///
@@ -46,23 +47,22 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
                             CONTRIBUTION POOL ERRORS
     //////////////////////////////////////////////////////////////*/
 
+    error LAWPContributionPool__PoolFull();
+    error LAWPContributionPool__NotFailed();
+    error LAWPContributionPool__GoalNotMet();
     error LAWPContributionPool__ZeroAddress();
     error LAWPContributionPool__InvalidPool();
-    error LAWPContributionPool__EngineInvalidPool();
     error LAWPContributionPool__InvalidGoal();
-    error LAWPContributionPool__InvalidWindow();
-    error LAWPContributionPool__InvalidMaxContributors();
     error LAWPContributionPool__PoolNotOpen();
-    error LAWPContributionPool__WindowNotOpen();
-    error LAWPContributionPool__WindowNotClosed();
-    error LAWPContributionPool__PoolFull();
-    error LAWPContributionPool__ZeroAmount();
-    error LAWPContributionPool__GoalNotMet();
-    error LAWPContributionPool__AlreadySettled();
-    error LAWPContributionPool__NotFailed();
-    error LAWPContributionPool__NoContribution();
-    error LAWPContributionPool__RefundAlreadyClaimed();
     error LAWPContributionPool__PoolNotEmpty();
+    error LAWPContributionPool__InvalidWindow();
+    error LAWPContributionPool__WindowNotOpen();
+    error LAWPContributionPool__AlreadySettled();
+    error LAWPContributionPool__NoContribution();
+    error LAWPContributionPool__WindowNotClosed();
+    error LAWPContributionPool__EngineInvalidPool();
+    error LAWPContributionPool__ZeroActualReceived();
+    error LAWPContributionPool__RefundAlreadyClaimed();
     error LAWPContributionPool__ContributionTooSmall();
 
     /*//////////////////////////////////////////////////////////////
@@ -268,9 +268,24 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         pool.totalRaised += _amount;
 
         // Interaction
+        // Snapshot the vault balance BEFORE the transfer.
+        uint256 balBefore = cNGNToken.balanceOf(address(this));
+
         cNGNToken.safeTransferFrom(msg.sender, address(this), _amount);
 
-        emit ContributionMade(_poolId, msg.sender, _amount, pool.totalRaised);
+        // Measure what actually landed in the vault.
+        uint256 actualReceived = cNGNToken.balanceOf(address(this)) - balBefore;
+        if (actualReceived == 0) revert LAWPContributionPool__ZeroActualReceived();
+
+        // If the actual received is less than the intended amount, adjust the record and totalRaised accordingly.
+        if (actualReceived != _amount) {
+            uint256 delta = _amount - actualReceived;
+
+            record.amount -= delta;
+            pool.totalRaised -= delta;
+        }
+
+        emit ContributionMade(_poolId, msg.sender, actualReceived, pool.totalRaised);
     }
 
     /// @inheritdoc ILAWPContributionPool
@@ -316,10 +331,12 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         uint256 lastIndex = contributorCount - 1;
 
         for (uint256 i = 0; i < contributorCount;) {
+            // loop from the storage array of contributor addresses who contributed to this pool.
             address contributor = _contributorLists[_poolId][i];
+
+            // Write to the memory array of contributors for the engine call
             contributors[i] = contributor;
 
-            // the shares should be determined after the risk fee has taken
             uint256 wad;
             if (i == lastIndex) {
                 // Last contributor absorbs all WAD rounding dust.
@@ -427,7 +444,9 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
         override
         returns (ContributionRecord memory)
     {
-        if (_poolId == 0 || _poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
+        if (_poolId == 0 || _poolId >= nextPoolId) {
+            revert LAWPContributionPool__InvalidPool();
+        }
         return _contributions[_poolId][_contributor];
     }
 

@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+
 import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
 
 /// @title LAWPActorRegistry

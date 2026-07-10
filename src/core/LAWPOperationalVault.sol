@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
 
 /// @title LAWPOperationalVault
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -18,9 +19,9 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
     /*//////////////////////////////////////////////////////////////
                        OPERATIONAL VAULT ERRORS
     //////////////////////////////////////////////////////////////*/
-    error LAWPOperationalVault_UnauthorizedCaller();
-    error LAWPOperationalVault_InvalidAddress();
     error LAWPOperationalVault_InvalidAmount();
+    error LAWPOperationalVault_InvalidAddress();
+    error LAWPOperationalVault_UnauthorizedCaller();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES

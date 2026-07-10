@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+import { LAWPStructs } from "../libraries/LAWPStructs.sol";
 import { ILAWPImpactToken } from "../interfaces/ILAWPImpactToken.sol";
 import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
 
 /// @title LAWPImpactToken
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -17,17 +18,16 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     /*//////////////////////////////////////////////////////////////
                           IMPACT TOKEN ERRORS
     //////////////////////////////////////////////////////////////*/
-    error LAWPImpactToken_TransferIntercepted();
-    error LAWPImpactToken_UnauthorizedCaller();
-    error LAWPImpactToken_ExceedsPrincipalCap();
-    error LAWPImpactToken_InvalidTokenId();
-    error LAWPImpactToken_ZeroAddressMint();
-    error LAWPImpactToken_InvalidRocAmount();
+
     error LAWPImpactToken_ZeroAddress();
-    error LAWPImpactToken_InvalidBaseURI();
-    error LAWPImpactToken_InvalidPrincipal();
     error LAWPImpactToken_InvalidShare();
     error LAWPImpactToken_InvalidPoolId();
+    error LAWPImpactToken_InvalidBaseURI();
+    error LAWPImpactToken_ZeroAddressMint();
+    error LAWPImpactToken_InvalidRocAmount();
+    error LAWPImpactToken_InvalidPrincipal();
+    error LAWPImpactToken_UnauthorizedCaller();
+    error LAWPImpactToken_ExceedsPrincipalCap();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -39,7 +39,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     ///         less than 1 quintillionth of the pool economically impossible.
     uint256 public constant TOTAL_SHARES = 1e18;
 
-    /// @notice The LAWPComplianceEngine contract that controls minting, updates, and claims. Critical for enforcing invariants and preventing double-spend exploits.
+    /// @notice The LAWPComplianceEngine contract that controls minting, updates, and claims.
     address public complianceEngine;
 
     /// @notice The base URI for all token metadata. Since all unique data is onchain, this is a static URI pointing to a generic JSON schema on IPFS that can be used for all tokens.

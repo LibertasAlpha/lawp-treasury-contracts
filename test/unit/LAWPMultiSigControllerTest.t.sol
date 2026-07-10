@@ -224,9 +224,7 @@ contract LAWPMultiSigControllerTest is LAWPTestBase {
             string memory name,
             string memory version,
             uint256 chainId,
-            address verifyingContract,
-            ,
-
+            address verifyingContract,,
         ) = controller.eip712Domain();
         assertEq(name, "LAWP MultiSig");
         assertEq(version, "1");

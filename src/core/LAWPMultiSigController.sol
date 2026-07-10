@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { ILAWPMultiSigController } from "../interfaces/ILAWPMultiSigController.sol";
-import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+import { LAWPStructs } from "../libraries/LAWPStructs.sol";
+import { ILAWPMultiSigController } from "../interfaces/ILAWPMultiSigController.sol";
+import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
 
 /// @title LAWPMultiSigController
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -20,19 +21,18 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     /*//////////////////////////////////////////////////////////////
                            MULTI-SIG ERRORS
     //////////////////////////////////////////////////////////////*/
-    error LAWPMultiSigController_InvalidSignatures();
-    error LAWPMultiSigController_BelowThreshold();
-    error LAWPMultiSigController_ProposalAlreadyExecuted();
-    error LAWPMultiSigController_InvalidPayload();
-    error LAWPMultiSigController_NotASigner();
-    error LAWPMultiSigController_InvalidSignerOrder();
-    error LAWPMultiSigController_InvalidThreshold();
-    error LAWPMultiSigController_SignerAlreadyExists();
     error LAWPMultiSigController_Expired();
-    error LAWPMultiSigController_TooManySigners();
-    error LAWPMultiSigController_InvalidSignatureLength();
+    error LAWPMultiSigController_NotASigner();
     error LAWPMultiSigController_ZeroAddress();
     error LAWPMultiSigController_InvalidPool();
+    error LAWPMultiSigController_InvalidPayload();
+    error LAWPMultiSigController_TooManySigners();
+    error LAWPMultiSigController_InvalidThreshold();
+    error LAWPMultiSigController_InvalidSignatures();
+    error LAWPMultiSigController_InvalidSignerOrder();
+    error LAWPMultiSigController_SignerAlreadyExists();
+    error LAWPMultiSigController_InvalidSignatureLength();
+    error LAWPMultiSigController_ProposalAlreadyExecuted();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES

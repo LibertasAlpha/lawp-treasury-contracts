@@ -19,15 +19,16 @@ contract LAWPFlowTest is LAWPTestBase {
                        DIRECT COORDINATOR FLOW
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice SCENARIO:
-    ///   1. Coordinator deposits 100_000e6 for 10 users (10% each).
-    ///   2. GRANT_INITIAL: 50_000e6 routed - 30% (15_000e6) -> yieldVault, 70% -> operationalVault.
-    ///   3. User[0] transfers token to a buyer - hook flushes pending yield to user[0].
-    ///   4. GRANT_CONTINUOUS: 20_000e6 routed. RoC: 10_000e6 routed.
-    ///   5. Buyer claims yield + RoC on the transferred token.
-    ///   6. LA2 claims operational funds.
+    /// @notice SCENARIO (DEMO: Full Lifecycle Flow):
+    ///   ACT 1: Coordinator deposits 100_000e6 for 10 users (10% each).
+    ///   ACT 2: GRANT_INITIAL: 50_000e6 routed - 30% (15_000e6) -> yieldVault, 70% -> opVault.
+    ///   ACT 3: User[0] transfers token to buyer - hook flushes pending yield to User[0].
+    ///   ACT 4: GRANT_CONTINUOUS: 20_000e6 routed. RoC: 10_000e6 routed.
+    ///   ACT 5: Buyer claims yield + RoC on the transferred token. LA2 claims operational funds.
     function test_FullLifecycleFlow() public {
-        // STEP 1: 10-user pool deposit
+        // =========================================================================
+        // ACT 1: The Setup & Deposit
+        // =========================================================================
         address[] memory users = new address[](10);
         uint256 poolId =
             _createContribPool(1, 100_000e6, block.timestamp, block.timestamp + 1 hours);
@@ -43,23 +44,25 @@ contract LAWPFlowTest is LAWPTestBase {
         vm.warp(block.timestamp + 1 hours + 1);
         _settlePool(poolId);
 
-        // Verify vault balances - full gross amount routed to operationalVault.
-        // yieldVault holds zero: it is funded only by subsequent revenue routing.
+        // Verify Vault Balances: 100% of raw capital hits the Operational Vault immediately.
+        // The Yield Vault remains completely empty (funded only by subsequent revenue).
         assertEq(cngn.balanceOf(address(operationalVault)), grossDeposit);
         assertEq(cngn.balanceOf(address(yieldVault)), 0);
-        // Engine and MockMultiSig hold zero
         assertEq(cngn.balanceOf(address(engine)), 0);
         assertEq(cngn.balanceOf(address(mockMultiSig)), 0);
 
-        // Each user has a token with 9_000e6 principal
+        // Verify NFT Minting: Each user automatically receives a fractional equity ERC721.
         for (uint256 i = 0; i < 10; i++) {
             assertEq(impactToken.ownerOf(i + 1), users[i]);
             assertEq(impactToken.getTokenData(i + 1).netPrincipal, perUserNet);
         }
 
-        // STEP 2: GRANT_INITIAL - 50_000e6
-        // 30% collective (15_000e6) -> yieldVault
-        // 50% LA2 (25_000e6) + 20% MVI1 (10_000e6) -> operationalVault
+        // =========================================================================
+        // ACT 2: Revenue Routing (GRANT_INITIAL)
+        // =========================================================================
+        // Splitting 50,000e6:
+        // -> 30% collective (15_000e6) routed to the Yield Vault for investors.
+        // -> 50% LA2 (25_000e6) + 20% MVI1 (10_000e6) hits the Operational Ledger.
         uint256 grantAmount = 50_000e6;
         uint256 colSplit = 15_000e6;
         uint256 la2Split = 25_000e6;
@@ -73,8 +76,11 @@ contract LAWPFlowTest is LAWPTestBase {
         assertEq(cngn.balanceOf(address(engine)), 0);
         assertEq(cngn.balanceOf(address(mockMultiSig)), 0);
 
-        // STEP 3: User[0] transfers Token 1 to a buyer
-        // Expected yield for Token 1 (10% of 15_000e6 collective) = 1_500e6
+        // =========================================================================
+        // ACT 3: The "Yield Sniper" Prevention Hook
+        // =========================================================================
+        // User[0] transfers Token 1 to a Buyer. 
+        // Expected pending yield for Token 1 (10% of 15_000e6 collective) = 1_500e6
         address user0 = users[0];
         address buyer = address(999);
         uint256 expectedYield = 1_500e6;
@@ -84,23 +90,25 @@ contract LAWPFlowTest is LAWPTestBase {
         vm.prank(user0);
         impactToken.transferFrom(user0, buyer, 1);
 
-        // Hook must flush pending yield to user0
+        // The ERC721 hook automatically intercepts the transfer and flushes the yield to User[0].
         assertEq(cngn.balanceOf(user0), user0BalBefore + expectedYield);
-        // Buyer inherits zero pending yield
+        
+        // The Buyer receives the token, but their claimable yield is reset to zero.
         assertEq(engine.calculateProportionalYield(1), 0);
         assertEq(impactToken.ownerOf(1), buyer);
 
-        // STEP 4: More revenue
-        // GRANT_CONTINUOUS for buyer: 20_000e6 -> 10% collective = 2_000e6
-        // RoC for Buyer: 10_000e6 -> buyer's 10% = 1_000e6 (capped at principal 9_000e6)
-
-        // GRANT_CONTINUOUS for la2Wallet: 20_000e6 -> 55% of operational = 11_000e6
+        // =========================================================================
+        // ACT 4: Continuous Yield & Return of Capital (RoC)
+        // =========================================================================
+        // Route a continuous grant and a Return of Capital.
+        // Buyer is entitled to 10% of this NEW yield since they now hold the token.
         _routeRevenue(1, 20_000e6, LAWPStructs.FlowType.GRANT_CONTINUOUS);
         _routeRevenue(1, 10_000e6, LAWPStructs.FlowType.RoC);
 
-        // STEP 5: Buyer claims yield + RoC
-        // Buyer's yield: 2_000e6 * 10% = 200e6
-        // Buyer's RoC:   10_000e6 * 10% = 1_000e6
+        // =========================================================================
+        // ACT 5: Secondary Claims
+        // =========================================================================
+        // Buyer claims their newly generated yield (10% of 2_000) and RoC (10% of 10_000).
         uint256 buyerBalBefore = cngn.balanceOf(buyer);
         vm.prank(buyer);
         engine.claimYield(1);
@@ -108,15 +116,16 @@ contract LAWPFlowTest is LAWPTestBase {
         assertEq(cngn.balanceOf(buyer), buyerBalBefore + 200e6 + 1_000e6);
         assertEq(engine.calculateProportionalYield(1), 0);
 
-        // STEP 6: LA2 claims operational funds
+        // LA2 Operational Wallet pulls its accumulated revenue from the vault.
         uint256 la2BalBefore = cngn.balanceOf(la2Wallet);
         vm.prank(la2Wallet);
         engine.claimOperationalFunds();
 
+        // 25,000 from Initial Grant + 11,000 from Continuous Grant.
         assertEq(cngn.balanceOf(la2Wallet), la2BalBefore + la2Split + 11_000e6);
         assertEq(engine.operationalBalances(la2Wallet), 0);
 
-        // Final vault integrity check
+        // Final architecture integrity check: Core orchestrators must never hold funds.
         assertEq(cngn.balanceOf(address(engine)), 0);
         assertEq(cngn.balanceOf(address(mockMultiSig)), 0);
     }

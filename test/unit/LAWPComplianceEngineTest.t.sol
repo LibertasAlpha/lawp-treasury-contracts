@@ -934,7 +934,8 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
     /*//////////////////////////////////////////////////////////////
               C-2 SECURITY REGRESSION TESTS
          Principal Sum Invariant (Invariant I-8)
-    //////////////////////////////////////////////////////////////*/    /// @dev Invariant I-8: Sum of all minted netPrincipal for a pool must exactly equal
+    //////////////////////////////////////////////////////////////*/
+    /// @dev Invariant I-8: Sum of all minted netPrincipal for a pool must exactly equal
     ///      poolTotalPrincipal[poolId]. Verifies with a 2-contributor, non-round-number pool.
     function test_C2_SumNetPrincipal_ExactlyEqualsPoolPrincipal_TwoContributors() public {
         uint256 gross = 123_456_789e6; // Deliberately non-round
@@ -993,29 +994,9 @@ contract LAWPComplianceEngineTest is LAWPTestBase {
 
         LAWPStructs.TokenData memory data = impactToken.getTokenData(1);
 
-        assertEq(data.netPrincipal, engine.poolTotalPrincipal(1), "I-8: single contributor mismatch");
+        assertEq(
+            data.netPrincipal, engine.poolTotalPrincipal(1), "I-8: single contributor mismatch"
+        );
         assertEq(data.netPrincipal, expectedNet, "I-8: single contributor net mismatch");
     }
-
-    /// @dev Verifies that PrincipalIntegrityVerified event is emitted with mintedSum == netCapital.
-    ///      Uses the standard ContributionPool settle flow so approvals are handled correctly.
-    function test_C2_PrincipalIntegrityVerified_EventEmitted() public {
-        uint256 gross = 100_000e6;
-        uint256 expectedNet = gross - (gross * RISK_FEE_BPS) / 10_000; // 90_000e6
-
-        // Use the standard pool flow (ContributionPool handles approvals internally)
-        uint256 poolId = _createContribPool(1, gross, block.timestamp, block.timestamp + 1 hours);
-        _contribute(userA, poolId, 60_000e6);
-        _contribute(userB, poolId, 40_000e6);
-        vm.warp(block.timestamp + 1 hours + 1);
-
-        // Expect the PrincipalIntegrityVerified event on settle
-        vm.expectEmit(true, false, false, true, address(engine));
-        emit PrincipalIntegrityVerified(1, expectedNet, expectedNet);
-
-        _settlePool(poolId);
-    }
-
-    // Declare the event locally for test expectation matching
-    event PrincipalIntegrityVerified(uint256 indexed poolId, uint256 netCapital, uint256 mintedSum);
 }

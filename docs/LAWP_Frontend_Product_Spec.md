@@ -16,24 +16,30 @@ This document outlines the product requirements and technical architecture for t
 ## 2. Portals & Workflows
 
 ### 2.1 Investor Portal (`app.lawp.io`)
+
 **Goal:** Participate in funding pools, view portfolio, and claim yield/RoC.
 
 **Workflows:**
+
 1. **Capital Formation:** Users call `LAWPContributionPool.contribute(poolId, amount)` with cNGN.
 2. **Claim Yield/RoC:** Users click "Claim", triggering `engine.claimYield(tokenId)` or `engine.claimRoC(tokenId)`.
-   - *UX Rule:* Disable claim buttons if pending balance is zero or system is paused.
+   - _UX Rule:_ Disable claim buttons if pending balance is zero or system is paused.
 
 ### 2.2 Operational Board Portal (`board.lawp.io`)
+
 **Goal:** Authorize fiat-backed revenue routing.
 
 **Workflows:**
+
 1. **Sign Payloads:** 5 trusted board members sign EIP-712 payloads (`poolId`, `amount`, `flowType`) verifying fiat generation.
 2. **Execution:** Once the threshold (e.g., 3-of-5) is met, any relayer broadcasts `LAWPMultiSigController.executeProposal(..., signatures)`.
 
 ### 2.3 Admin Panel (`admin.lawp.io`)
+
 **Goal:** System management and capital settlement.
 
 **Workflows:**
+
 1. **Manage Pools:** Admin creates pools via `LAWPContributionPool.createPool()`.
 2. **Settle Capital:** Once a pool goal is met, Admin calls `LAWPContributionPool.settle(poolId)`. This automatically computes `wadShares` and triggers the Engine to mint Impact Tokens.
 3. **Emergency Controls:** Admin can toggle `emergencyPause` via the Engine to freeze protocol flows.
@@ -44,12 +50,12 @@ This document outlines the product requirements and technical architecture for t
 
 ### Key Read & Write Interfaces
 
-| Contract | Key Reads | Key Writes |
-| --- | --- | --- |
-| **`LAWPContributionPool`** | `getPool(id)`, `getContribution(poolId, user)` | `contribute(id, amount)`, `settle(id)`, `claimRefund(id)` |
-| **`LAWPImpactToken`** | `balanceOf(user)`, `getTokenData(id)` | *None (Minted by Engine)* |
-| **`LAWPComplianceEngine`** | `poolYieldTracker(id)`, `paused()`, `riskFeeBPS()` | `claimYield(id)`, `claimRoC(id)` |
-| **`LAWPMultiSigController`** | `nonce()`, `executedProposals(id)` | `executeProposal(..., signatures)` |
+| Contract                     | Key Reads                                          | Key Writes                                                |
+| ---------------------------- | -------------------------------------------------- | --------------------------------------------------------- |
+| **`LAWPContributionPool`**   | `getPool(id)`, `getContribution(poolId, user)`     | `contribute(id, amount)`, `settle(id)`, `claimRefund(id)` |
+| **`LAWPImpactToken`**        | `balanceOf(user)`, `getTokenData(id)`              | _None (Minted by Engine)_                                 |
+| **`LAWPComplianceEngine`**   | `poolYieldTracker(id)`, `paused()`, `riskFeeBPS()` | `claimYield(id)`, `claimRoC(id)`                          |
+| **`LAWPMultiSigController`** | `nonce()`, `executedProposals(id)`                 | `executeProposal(..., signatures)`                        |
 
 ### UI & UX Guidelines
 

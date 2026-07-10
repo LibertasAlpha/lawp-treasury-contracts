@@ -32,7 +32,7 @@ library LAWPStructs {
     ///      per-contributor equity fractions.
     struct TokenData {
         uint256 netPrincipal; // Net CNGN locked after the risk fee deduction
-        uint256 rocReturned; // Amount of principal already returned (capped at netPrincipal)
+        uint256 rocReturned; // Amount of user principal already returned (capped at netPrincipal)
         uint256 poolShareWAD; // Fractional ownership as WAD (1e18 = 100%, 5e17 = 50%)
         uint256 poolId; // Identifier for the specific deployment pool (e.g., FUTO campus)
     }

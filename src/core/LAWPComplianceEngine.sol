@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
-import { ILAWPYieldVault } from "../interfaces/ILAWPYieldVault.sol";
-import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
-import { ILAWPImpactToken } from "../interfaces/ILAWPImpactToken.sol";
-import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+import { LAWPStructs } from "../libraries/LAWPStructs.sol";
+import { ILAWPYieldVault } from "../interfaces/ILAWPYieldVault.sol";
+import { ILAWPImpactToken } from "../interfaces/ILAWPImpactToken.sol";
+import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
+import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
+import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
 
 /// @title LAWPComplianceEngine
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -31,27 +32,24 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /*//////////////////////////////////////////////////////////////
                         COMPLIANCE ENGINE ERRORS
     //////////////////////////////////////////////////////////////*/
-    error LAWPComplianceEngine_InvalidRiskFee();
-    error LAWPComplianceEngine_SystemPaused();
-    error LAWPComplianceEngine_UnauthorizedCaller();
-    error LAWPComplianceEngine_InvalidFlowType();
-    error LAWPComplianceEngine_ExceedsPrincipalCap();
-    error LAWPComplianceEngine_ArrayMismatch();
+
     error LAWPComplianceEngine_InvalidWAD();
     error LAWPComplianceEngine_ZeroAddress();
-    error LAWPComplianceEngine_InvalidAmount();
-    error LAWPComplianceEngine_PoolAlreadyExists();
+    error LAWPComplianceEngine_InvalidPool();
     error LAWPComplianceEngine_InvalidActor();
     error LAWPComplianceEngine_ArrayTooLarge();
-    error LAWPComplianceEngine_NothingToClaim();
+    error LAWPComplianceEngine_ArrayMismatch();
     error LAWPComplianceEngine_BatchTooLarge();
-    error LAWPComplianceEngine_NotTokenOwner(uint256 tokenId);
+    error LAWPComplianceEngine_InvalidAmount();
+    error LAWPComplianceEngine_NothingToClaim();
+    error LAWPComplianceEngine_InvalidRiskFee();
+    error LAWPComplianceEngine_InvalidFlowType();
+    error LAWPComplianceEngine_PoolAlreadyExists();
     error LAWPComplianceEngine_NoOperationalFunds();
-    error LAWPComplianceEngine_UnauthorizedInjector(address fundProvider);
-    error LAWPComplianceEngine_ZeroAddressInjector();
-    error LAWPComplianceEngine_InvalidPool();
+    error LAWPComplianceEngine_UnauthorizedCaller();
     error LAWPComplianceEngine_ZeroActualReceived();
-    error LAWPComplianceEngine_PrincipalMintingMismatch(uint256 expected, uint256 actual);
+    error LAWPComplianceEngine_ExceedsPrincipalCap();
+    error LAWPComplianceEngine_NotTokenOwner(uint256 tokenId);
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -288,61 +286,42 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
             revert LAWPComplianceEngine_ArrayMismatch();
         }
 
-        // 1. Verify exact 100% allocation (sum of WAD shares == 1e18).
-        _validateWAD(_wadShares, contributorsLength);
-
-        // 2. Resolve the Operational Treasury address before any state mutation.
-        address opTreasury = registry.operationalTreasuryWallet();
-        if (opTreasury == address(0)) revert LAWPComplianceEngine_InvalidActor();
+        // Verify exact 100% allocation (sum of WAD shares == 1e18).
+        _validateWAD(_wadShares);
 
         // Effects (partial): register pool to lock replay before Interaction
         pools[_poolId] = Pool({ exists: true, createdAt: block.timestamp });
         emit PoolCreated(_poolId, block.timestamp);
 
-        // Interaction: execute the ERC20 transfer with balance-delta measurement
-        // 3. Snapshot the vault balance BEFORE the transfer.
+        // Snapshot the vault balance BEFORE the transfer.
         uint256 balBefore = cNGNToken.balanceOf(address(operationalVault));
 
+        // Interaction: execute the ERC20 transfer with balance-delta measurement
         cNGNToken.safeTransferFrom(msg.sender, address(operationalVault), _grossAmount);
 
-        // 4. Measure what actually landed in the vault.
-        //    This is the canonical amount for ALL downstream accounting.
-        //    If cNGN ever gains a transfer fee (proxy upgrade), this captures the true net.
+        // Measure what actually landed in the vault.
         uint256 actualReceived = cNGNToken.balanceOf(address(operationalVault)) - balBefore;
         if (actualReceived == 0) revert LAWPComplianceEngine_ZeroActualReceived();
 
         // Effects (remainder): derive every ledger entry from actualReceived
-        // 5. Compute protocol fee and net campaign capital from the actual deposit.
-        (uint256 riskFee, uint256 netCapital) = _computeFees(actualReceived);
 
-        // 6. Credit the internal pull-ledger for the Operational Treasury.
-        //    riskFee + netCapital always reconstructs to actualReceived (no wei lost).
-        operationalBalances[opTreasury] += riskFee;
-        operationalBalances[opTreasury] += netCapital;
+        // Compute protocol fee and net campaign capital from the actual deposit.
+        (uint256 riskFee, uint256 _netCapital) = _computeFees(actualReceived);
 
-        // 7. Write the immutable RoC ceiling for this pool.
-        //    Written once; enforced during RoC routing to prevent over-routing.
-        poolTotalPrincipal[_poolId] = netCapital;
+        // Credit the internal pull-ledger for the Operational Treasury.
+        address opTreasury = registry.operationalTreasuryWallet();
+        if (opTreasury == address(0)) revert LAWPComplianceEngine_InvalidActor();
 
-        emit RiskFeeAssessed(_poolId, actualReceived, riskFee, netCapital);
+        operationalBalances[opTreasury] += (riskFee + _netCapital);
 
-        // 8. Mint fractional shares to contributors based on actual net capital.
-        //    The function returns the sum of all minted netPrincipal values so we can
-        //    assert Invariant I-8: mintedSum must equal netCapital exactly.
-        uint256 mintedSum =
-            _mintContributorShares(_poolId, netCapital, _contributors, _wadShares, contributorsLength);
+        // Write the immutable RoC ceiling for this pool.
+        poolTotalPrincipal[_poolId] = _netCapital;
 
-        // Post-mint assertion: dust absorption must be exact, never lossy.
-        // This is a zero-cost invariant guard - it should never fire in correct operation
-        // but will catch any future regression in the minting arithmetic.
-        if (mintedSum != netCapital) {
-            revert LAWPComplianceEngine_PrincipalMintingMismatch(netCapital, mintedSum);
-        }
-
+        emit RiskFeeAssessed(_poolId, actualReceived, riskFee, _netCapital);
         emit CapitalPooled(_poolId, actualReceived, riskFee);
 
-        // Emit on-chain proof of principal conservation for off-chain verifiers.
-        emit PrincipalIntegrityVerified(_poolId, netCapital, mintedSum);
+        // Mint fractional shares to contributors based on actual net capital.
+        _mintContributorShares(_poolId, _netCapital, _contributors, _wadShares);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -445,7 +424,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /// @inheritdoc ILAWPComplianceEngine
-    function claimYieldBatch(uint256[] calldata _tokenIds) external override whenNotPaused nonReentrant {
+    function claimYieldBatch(uint256[] calldata _tokenIds)
+        external
+        override
+        whenNotPaused
+        nonReentrant
+    {
         uint256 length = _tokenIds.length;
         if (length > MAX_BATCH_CLAIM) revert LAWPComplianceEngine_BatchTooLarge();
 
@@ -489,7 +473,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         // Track actual routed RoC, not requested amount.
         poolRocTracker[_poolId] += actualRocReceived;
-        
+
         // Post-transfer hard-stop assertion
         if (poolRocTracker[_poolId] > poolTotalPrincipal[_poolId]) {
             revert LAWPComplianceEngine_ExceedsPrincipalCap();
@@ -580,38 +564,6 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /*//////////////////////////////////////////////////////////////
-                               VIEW HELPERS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc ILAWPComplianceEngine
-    function calculateProportionalYield(uint256 _tokenId) external view override returns (uint256) {
-        LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
-
-        // WAD math: multiply by share (≤ 1e18), then divide by 1e18.
-        uint256 totalYieldForToken =
-            (poolYieldTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
-        uint256 claimableYield = totalYieldForToken > yieldClaimed[_tokenId]
-            ? totalYieldForToken - yieldClaimed[_tokenId]
-            : 0;
-
-        uint256 totalRocForToken = (poolRocTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
-        uint256 claimableRoc =
-            totalRocForToken > data.rocReturned ? totalRocForToken - data.rocReturned : 0;
-
-        uint256 maxRemainingRoc = data.netPrincipal - data.rocReturned;
-        if (claimableRoc > maxRemainingRoc) {
-            claimableRoc = maxRemainingRoc;
-        }
-
-        return claimableYield + claimableRoc;
-    }
-
-    /// @inheritdoc ILAWPComplianceEngine
-    function isPoolActive(uint256 poolId) external view returns (bool) {
-        return pools[poolId].exists;
-    }
-
-    /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -619,6 +571,8 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     ///                    processes state updates, and emits events.
     /// @dev               Silently returns 0 if no funds are claimable to
     ///                    facilitate uninterrupted batch processing.
+    ///                    The contributor get their full claimable amount (include the 3 flow)
+    ///                    in one, it is not split into multiple transfers.
     /// @param _tokenId    The specific ID of the Impact Token.
     /// @param _tokenOwner The explicitly pre-fetched owner of the token to
     ///                    guarantee correct event emission.
@@ -634,8 +588,8 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         // ALL-TIME historical yield of the pool. A token's claimable amount is its
         // lifetime slice of that all-time yield, minus what it has already claimed.
         //
-        // YIELD MATH: (Historical Pool Yield * Token BPS / 100%) - Already Claimed Yield
-        // ROC MATH: (Historical Pool RoC * Token BPS / 100%) - Already Claimed RoC
+        // YIELD MATH: (Historical Pool Yield * Token WAD Share / 100%) - Already Claimed Yield
+        // ROC MATH: (Historical Pool RoC * Token WAD Share / 100%) - Already Claimed RoC
         //
         // CONTEXT FOR "ALREADY CLAIMED":
         // - Already Claimed Yield: The running total of continuous yield this exact
@@ -699,12 +653,10 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @dev Extracted internally to optimize stack depth inside the `processPoolDeposit` function.
     ///      Uses TOTAL_SHARES (1e18) instead of the former TOTAL_BPS (10_000) to eliminate
     ///      the truncation floor that caused micro-contributor zeroing under BPS.
-    function _validateWAD(uint256[] calldata _wadShares, uint256 _contributorsLength)
-        internal
-        pure
-    {
+    function _validateWAD(uint256[] calldata _wadShares) internal pure {
         uint256 totalWAD = 0;
-        for (uint256 i; i < _contributorsLength;) {
+        uint256 len = _wadShares.length;
+        for (uint256 i; i < len;) {
             totalWAD += _wadShares[i];
             unchecked {
                 ++i;
@@ -737,21 +689,19 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     ///      gross-proportional == net-proportional), but are computed independently.
     ///      The returned `mintedSum` allows the caller to assert they are exactly equal to
     ///      `_netCapital`, enforcing Invariant I-8 as a hard post-condition.
-    ///
-    /// @return mintedSum  The exact sum of all minted netPrincipal values.
-    ///                    The caller MUST assert mintedSum == _netCapital.
     function _mintContributorShares(
         uint256 _poolId,
         uint256 _netCapital,
         address[] calldata _contributors,
-        uint256[] calldata _wadShares,
-        uint256 _contributorsLength
-    ) internal returns (uint256 mintedSum) {
+        uint256[] calldata _wadShares
+    ) internal {
         uint256 remainingCapital = _netCapital;
-        uint256 lastIndex = _contributorsLength - 1;
+        uint256 len = _contributors.length;
+        uint256 lastIndex = len - 1;
 
-        for (uint256 i; i < _contributorsLength;) {
+        for (uint256 i = 0; i < len;) {
             uint256 userNetPrincipal;
+
             if (i == lastIndex) {
                 // Final contributor absorbs any capital dust to maintain exact total integrity.
                 userNetPrincipal = remainingCapital;
@@ -761,7 +711,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
                 remainingCapital -= userNetPrincipal;
             }
             impactToken.mint(_contributors[i], userNetPrincipal, _wadShares[i], _poolId);
-            mintedSum += userNetPrincipal;
+
             unchecked {
                 ++i;
             }
@@ -769,8 +719,36 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /*//////////////////////////////////////////////////////////////
-                         OPERATOR VIEW HELPERS
+                               VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc ILAWPComplianceEngine
+    function calculateProportionalYield(uint256 _tokenId) external view override returns (uint256) {
+        LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
+
+        // WAD math: multiply by share (≤ 1e18), then divide by 1e18.
+        uint256 totalYieldForToken =
+            (poolYieldTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
+        uint256 claimableYield = totalYieldForToken > yieldClaimed[_tokenId]
+            ? totalYieldForToken - yieldClaimed[_tokenId]
+            : 0;
+
+        uint256 totalRocForToken = (poolRocTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
+        uint256 claimableRoc =
+            totalRocForToken > data.rocReturned ? totalRocForToken - data.rocReturned : 0;
+
+        uint256 maxRemainingRoc = data.netPrincipal - data.rocReturned;
+        if (claimableRoc > maxRemainingRoc) {
+            claimableRoc = maxRemainingRoc;
+        }
+
+        return claimableYield + claimableRoc;
+    }
+
+    /// @inheritdoc ILAWPComplianceEngine
+    function isPoolActive(uint256 poolId) external view returns (bool) {
+        return pools[poolId].exists;
+    }
 
     /// @inheritdoc ILAWPComplianceEngine
     function getPoolNetCapital(uint256 _poolId) external view returns (uint256) {
