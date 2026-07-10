@@ -38,8 +38,17 @@ contract LAWPFlowTest is LAWPTestBase {
             _contribute(users[i], poolId, 10_000e6);
         }
 
+        // Visualize the user and their contribuition
+        // [addr1, addr2, addr3, addr4, addr5, addr6, addr7, addr8, addr9, addr10]
+        // [10_000e6, 10_000e6, 10_000e6, 10_000e6, 10_000e6, 10_000e6, 10_000e6, 10_000e6, 10_000e6, 10_000e6] = 100_000e6
+
         uint256 grossDeposit = 100_000e6;
-        uint256 perUserNet = 9_000e6; // 10% of netCapital
+        uint256 perUserNet = 9_000e6; // 90% of netCapital of user contribution after riskfee has been taken
+
+        // After riskFee deduction, the engine receives 90_000e6 net capital for the pool.
+        // [addr1, addr2, addr3, addr4, addr5, addr6, addr7, addr8, addr9, addr10]
+        // [9_000e6, 9_000e6, 9_000e6, 9_000e6, 9_000e6, 9_000e6, 9_000e6, 9_000e6, 9_000e6, 9_000e6] = 90_000e6
+        // riskFee = 10_000e6 (10% of grossDeposit)
 
         vm.warp(block.timestamp + 1 hours + 1);
         _settlePool(poolId);
