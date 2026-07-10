@@ -79,7 +79,7 @@ contract LAWPFlowTest is LAWPTestBase {
         // =========================================================================
         // ACT 3: The "Yield Sniper" Prevention Hook
         // =========================================================================
-        // User[0] transfers Token 1 to a Buyer. 
+        // User[0] transfers Token 1 to a Buyer.
         // Expected pending yield for Token 1 (10% of 15_000e6 collective) = 1_500e6
         address user0 = users[0];
         address buyer = address(999);
@@ -92,7 +92,7 @@ contract LAWPFlowTest is LAWPTestBase {
 
         // The ERC721 hook automatically intercepts the transfer and flushes the yield to User[0].
         assertEq(cngn.balanceOf(user0), user0BalBefore + expectedYield);
-        
+
         // The Buyer receives the token, but their claimable yield is reset to zero.
         assertEq(engine.calculateProportionalYield(1), 0);
         assertEq(impactToken.ownerOf(1), buyer);
