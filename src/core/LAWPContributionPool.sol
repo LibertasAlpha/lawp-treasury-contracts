@@ -112,7 +112,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Next pool identifier to assign. Starts at 1; poolId 0 is reserved.
-    uint256 public nextPoolId;
+    uint256 public nextPoolId = 1;
 
     /// @notice Core configuration and runtime state for each pool.
     mapping(uint256 poolId => PoolConfig) private _pools;
@@ -138,7 +138,6 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     constructor(address _cNGNToken, address _admin) Ownable(_admin) {
         if (_cNGNToken == address(0)) revert LAWPContributionPool__ZeroAddress();
 
-        nextPoolId = 1;
         cNGNToken = IERC20(_cNGNToken);
     }
 

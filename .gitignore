@@ -12,3 +12,4 @@ broadcast
 .env
 note.md
 demo_script.md
+scripts/export-abis.js

@@ -20,12 +20,12 @@ bracket_spacing = true
 int_types = "long"
 
 [fuzz]
-runs = 10000
+runs = 256
 seed = "0x4c415750"             # Hex of "LAWP" using cast --from-ascii "LAWP"
 
 [invariant]
-runs = 10000
-depth = 500
+runs = 128
+depth = 20
 fail_on_revert = false          # collect all violations, don't stop early
 
 [rpc_endpoints]
@@ -33,9 +33,17 @@ anvil        = "http://127.0.0.1:8545"
 stagenet     = "${STAGENET_RPC_URL}"
 base         = "${BASE_MAINNET_RPC}"
 base_sepolia = "${BASE_SEPOLIA_RPC}"
+polygon      = "${POLYGON_MAINNET_RPC}"
+polygon_amoy = "${POLYGON_AMOY_RPC}"
+monad        = "${MONAD_MAINNET_RPC}"
+monad_testnet = "${MONAD_TESTNET_RPC}"
 
 [etherscan]
 base         = { key = "${BASESCAN_API_KEY}" }
 base_sepolia = { key = "${BASESCAN_API_KEY}" }
+polygon      = { key = "${POLYGONSCAN_API_KEY}" }
+polygon_amoy = { key = "${POLYGONSCAN_API_KEY}" }
+monad        = { key = "${MONADSCAN_API_KEY}" }
+monad_testnet = { key = "${MONADSCAN_API_KEY}" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

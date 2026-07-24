@@ -130,7 +130,8 @@ contract ConfigureLAWPSystem is Script {
     //////////////////////////////////////////////////////////////*/
 
     function _finalVerification() internal {
-        vm.startPrank(adminSafeAddress);
+        uint256 adminSafePrivateKey = vm.envUint("ADMIN_SAFE_PRIVATE_KEY");
+        vm.startBroadcast(adminSafePrivateKey);
 
         actorRegistry.acceptOwnership();
         yieldVault.acceptOwnership();
@@ -140,7 +141,7 @@ contract ConfigureLAWPSystem is Script {
         multiSigController.acceptOwnership();
         contributionPool.acceptOwnership();
 
-        vm.stopPrank();
+        vm.stopBroadcast();
 
         _assertSystemIntegrity();
     }
