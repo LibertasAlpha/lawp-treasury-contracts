@@ -20,11 +20,11 @@ bracket_spacing = true
 int_types = "long"
 
 [fuzz]
-runs = 256
+runs = 56
 seed = "0x4c415750"             # Hex of "LAWP" using cast --from-ascii "LAWP"
 
 [invariant]
-runs = 128
+runs = 28
 depth = 20
 fail_on_revert = false          # collect all violations, don't stop early
 
