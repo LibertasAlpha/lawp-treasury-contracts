@@ -10,6 +10,3 @@ broadcast
 
 # Dotenv file
 .env
-note.md
-demo_script.md
-scripts/export-abis.js
