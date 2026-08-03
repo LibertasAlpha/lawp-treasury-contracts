@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import { ILAWPContributionPool } from "../interfaces/ILAWPContributionPool.sol";
-import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
+import {ILAWPContributionPool} from "../interfaces/ILAWPContributionPool.sol";
+import {ILAWPComplianceEngine} from "../interfaces/ILAWPComplianceEngine.sol";
 
 /// @title LAWPContributionPool
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -40,7 +39,7 @@ import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
 ///
 ///      5. MAX_CONTRIBUTORS mirrors the ComplianceEngine's hard cap (20).
 ///         Configurable per pool up to this ceiling; enforced in createPool().
-contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, ReentrancyGuard {
+contract LAWPContributionPool is ILAWPContributionPool, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -64,6 +63,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     error LAWPContributionPool__ZeroActualReceived();
     error LAWPContributionPool__RefundAlreadyClaimed();
     error LAWPContributionPool__ContributionTooSmall();
+    error LAWPContributionPool__UnauthorizedCaller();
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
@@ -101,7 +101,9 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @notice The LAWPComplianceEngine contract that controls minting, updates, and claims. Critical for enforcing invariants and preventing double-spend exploits.
-    address public complianceEngine;
+    ILAWPComplianceEngine public immutable complianceEngine;
+
+    bytes32 public constant CAMPAIGN_MANAGER_ROLE = keccak256("CAMPAIGN_MANAGER_ROLE");
 
     /// @notice The cNGNToken ERC20 settlement token - the only accepted contribution currency.
     /// @dev Immutable: cNGNToken is the single accepted asset across the LAWP Protocol.
@@ -123,38 +125,21 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     mapping(uint256 poolId => address[] contributors) private _contributorLists;
 
     /// @notice Per-contributor deposit records keyed by pool then address.
-    mapping(uint256 poolId => mapping(address contributor => ContributionRecord)) private
-        _contributions;
+    mapping(uint256 poolId => mapping(address contributor => ContributionRecord)) private _contributions;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initialises the contract with protocol-level constants.
-    /// @dev Only `cNGNToken`, and the admin wallet are set here.
-    ///      All pool-specific parameters are configured via createPool().
+    /// @dev All pool-specific parameters are configured via createPool().
     /// @param _cNGNToken   The cNGNToken ERC20 token address.
-    /// @param _admin  The initial owner. Receives createPool / cancelPool authority.
-    constructor(address _cNGNToken, address _admin) Ownable(_admin) {
-        if (_cNGNToken == address(0)) revert LAWPContributionPool__ZeroAddress();
+    /// @param _engine The LAWPComplianceEngine contract address.
+    constructor(address _cNGNToken, address _engine) {
+        if (_cNGNToken == address(0) || _engine == address(0)) revert LAWPContributionPool__ZeroAddress();
 
         cNGNToken = IERC20(_cNGNToken);
-    }
-
-    /// @notice Prevents accidental renunciation of contract ownership.
-    function renounceOwnership() public view override onlyOwner {
-        revert("LAWPContributionPool: renounceOwnership is disabled");
-    }
-
-    /// @notice Links the Compliance Engine. Callable only by the Admin/Owner.
-    /// @param _engine The address of the LAWPComplianceEngine contract.
-    function setComplianceEngine(address _engine) external onlyOwner {
-        if (_engine == address(0)) revert LAWPContributionPool__ZeroAddress();
-
-        address oldEngine = complianceEngine;
-        complianceEngine = _engine;
-
-        emit ComplianceEngineUpdated(oldEngine, _engine);
+        complianceEngine = ILAWPComplianceEngine(_engine);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -166,14 +151,13 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     function createPool(uint256 _enginePoolId, uint256 _goal, uint256 _startTime, uint256 _endTime)
         external
         override
-        onlyOwner
         returns (uint256 poolId)
     {
+        if (!IAccessControl(address(complianceEngine)).hasRole(CAMPAIGN_MANAGER_ROLE, msg.sender)) {
+            revert LAWPContributionPool__UnauthorizedCaller();
+        }
         // Checks
-        if (
-            _enginePoolId == 0
-                || ILAWPComplianceEngine(complianceEngine).isPoolActive(_enginePoolId)
-        ) {
+        if (_enginePoolId == 0 || complianceEngine.isPoolActive(_enginePoolId)) {
             revert LAWPContributionPool__EngineInvalidPool();
         }
         if (_goal == 0) revert LAWPContributionPool__InvalidGoal();
@@ -204,7 +188,10 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     ///      Setting status to Failed is the correct terminal state - it makes the pool
     ///      ineligible for future contributions and eligible for refund queries (though
     ///      with zero raised, no refunds will be exercised).
-    function cancelPool(uint256 _poolId) external override onlyOwner {
+    function cancelPool(uint256 _poolId) external override {
+        if (!IAccessControl(address(complianceEngine)).hasRole(CAMPAIGN_MANAGER_ROLE, msg.sender)) {
+            revert LAWPContributionPool__UnauthorizedCaller();
+        }
         if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
 
         PoolConfig storage pool = _pools[_poolId];
@@ -304,7 +291,10 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
     ///      amounts, matching the engine's own _mintContributorShares dust-absorption
     ///      pattern. Because the denominator is 1e18, any contributor providing less
     ///      than 100 Quintillion cNGN of the pool rounds to 0 - economically impossible.
-    function settle(uint256 _poolId) external override onlyOwner nonReentrant {
+    function settle(uint256 _poolId) external override nonReentrant {
+        if (!IAccessControl(address(complianceEngine)).hasRole(CAMPAIGN_MANAGER_ROLE, msg.sender)) {
+            revert LAWPContributionPool__UnauthorizedCaller();
+        }
         // Checks
         if (_poolId >= nextPoolId) revert LAWPContributionPool__InvalidPool();
 
@@ -370,8 +360,7 @@ contract LAWPContributionPool is ILAWPContributionPool, Ownable2Step, Reentrancy
 
         // 2. Call processPoolDeposit - complianceEngine pulls totalRaised cNGNToken from this contract,
         //    computes the risk fee, writes poolTotalPrincipal, and mints Impact Tokens.
-        ILAWPComplianceEngine(complianceEngine)
-            .processPoolDeposit(enginePoolId, totalRaised, contributors, wadShares);
+        complianceEngine.processPoolDeposit(enginePoolId, totalRaised, contributors, wadShares);
 
         // 3. Reset approval to zero. If processPoolDeposit pulled the full amount the
         //    allowance is already 0,

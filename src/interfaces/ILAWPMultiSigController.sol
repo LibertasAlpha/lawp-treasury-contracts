@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
+import {LAWPStructs} from "../libraries/LAWPStructs.sol";
 
 /// @title ILAWPMultiSigController
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -10,12 +10,6 @@ interface ILAWPMultiSigController {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Emitted when a new authorized signer is added.
-    event SignerAdded(address indexed signer);
-
-    /// @notice Emitted when an authorized signer is removed.
-    event SignerRemoved(address indexed signer);
 
     /// @notice Emitted when the required signature threshold is updated.
     event ThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
@@ -56,13 +50,7 @@ interface ILAWPMultiSigController {
         bytes calldata signatures
     ) external;
 
-    /// @notice Adds a new authorized signer to the board. Callable only by the Admin/Owner.
-    function addSigner(address _signer) external;
-
-    /// @notice Removes an authorized signer from the board. Callable only by the Admin/Owner.
-    function removeSigner(address _signer) external;
-
     /// @notice Updates the required number of signatures for execution.
-    ///         Callable only by the Admin/Owner.
+    ///         Callable only by the Governance Role.
     function updateThreshold(uint256 _newThreshold) external;
 }

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {LAWPStructs} from "../libraries/LAWPStructs.sol";
 
 /// @title ILAWPComplianceEngine
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -23,27 +22,20 @@ interface ILAWPComplianceEngine {
     /// @notice Emitted when the risk fee basis points are updated.
     event RiskFeeUpdated(uint256 oldFeeBPS, uint256 newFeeBPS);
 
-    /// @notice Emitted when the Multi-Sig Controller address is updated.
-    event MultiSigControllerUpdated(address indexed oldController, address indexed newController);
-
-    /// @notice Emitted when the Contribution Pool address is updated.
-    event ContributionPoolUpdated(address indexed oldPool, address indexed newPool);
+    /// @notice Emitted when an operational actor wallet is updated.
+    event ActorUpdated(string actorType, address indexed oldWallet, address indexed newWallet);
 
     /// @notice Emitted when a new project pool is created.
     event PoolCreated(uint256 indexed poolId, uint256 timestamp);
 
     /// @notice Emitted when a risk fee is assessed for a project pool.
-    event RiskFeeAssessed(
-        uint256 indexed poolId, uint256 grossAmount, uint256 feeAmount, uint256 netCapital
-    );
+    event RiskFeeAssessed(uint256 indexed poolId, uint256 grossAmount, uint256 feeAmount, uint256 netCapital);
 
     /// @notice Emitted when a new contribution is processed and capital is safely locked.
     event CapitalPooled(uint256 indexed poolId, uint256 grossAmount, uint256 riskFeeDeducted);
 
     /// @notice Emitted when off-chain revenue is mathematically allocated and routed.
-    event OperationalAllocationRouted(
-        uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount
-    );
+    event OperationalAllocationRouted(uint256 indexed poolId, LAWPStructs.FlowType flowType, uint256 totalAmount);
 
     /// @notice Emitted when an operational actor (LA2, Dev, etc.) pulls their allocated funds.
     event OperationalFundsClaimed(address indexed wallet, uint256 amount);
@@ -52,9 +44,7 @@ interface ILAWPComplianceEngine {
     event OperationalBalanceMigrated(address indexed from, address indexed to, uint256 amount);
 
     /// @notice Emitted when a Contributor pulls their proportional yield and RoC.
-    event YieldClaimed(
-        uint256 indexed tokenId, address indexed claimer, uint256 yieldAmount, uint256 rocAmount
-    );
+    event YieldClaimed(uint256 indexed tokenId, address indexed claimer, uint256 yieldAmount, uint256 rocAmount);
 
     /*//////////////////////////////////////////////////////////////
                            CAPITAL FORMATION
@@ -106,7 +96,7 @@ interface ILAWPComplianceEngine {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Allows the admin to migrate an operational balance to a new wallet.
-    /// @dev Only callable by the owner (Admin Safe). Conserves the total operational balance.
+    /// @dev Only callable by the Governance Role. Conserves the total operational balance.
     /// @param _from The old operational actor's wallet address.
     /// @param _to The new operational actor's wallet address.
     function migrateOperationalBalance(address _from, address _to) external;

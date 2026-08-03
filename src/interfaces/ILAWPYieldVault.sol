@@ -15,9 +15,6 @@ interface ILAWPYieldVault {
     /// @notice Emitted when the Engine explicitly commands the vault to move capital.
     event YieldTransferExecuted(address indexed to, uint256 amount);
 
-    /// @notice Emitted when the Admin updates the recognized Compliance Engine.
-    event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
-
     /*//////////////////////////////////////////////////////////////
                                EXECUTION
     //////////////////////////////////////////////////////////////*/
@@ -28,12 +25,4 @@ interface ILAWPYieldVault {
     /// @param _to The destination address.
     /// @param _amount The exact amount of cNGN to transfer.
     function executeTransfer(address _to, uint256 _amount) external;
-
-    /*//////////////////////////////////////////////////////////////
-                             CONFIGURATION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Updates the recognized Compliance Engine.
-    /// @dev Restricted to the Admin/Owner.
-    function setComplianceEngine(address _newEngine) external;
 }

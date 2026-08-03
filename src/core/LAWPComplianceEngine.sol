@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
-import { ILAWPYieldVault } from "../interfaces/ILAWPYieldVault.sol";
-import { ILAWPImpactToken } from "../interfaces/ILAWPImpactToken.sol";
-import { ILAWPActorRegistry } from "../interfaces/ILAWPActorRegistry.sol";
-import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
-import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
+import {LAWPStructs} from "../libraries/LAWPStructs.sol";
+import {ILAWPYieldVault} from "../interfaces/ILAWPYieldVault.sol";
+import {ILAWPImpactToken} from "../interfaces/ILAWPImpactToken.sol";
+import {ILAWPComplianceEngine} from "../interfaces/ILAWPComplianceEngine.sol";
+import {ILAWPOperationalVault} from "../interfaces/ILAWPOperationalVault.sol";
 
 /// @title LAWPComplianceEngine
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -26,7 +24,7 @@ import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
 ///         for investors and operational actors.
 ///      The contract is fortified with robust access controls, circuit breakers, and
 ///      comprehensive event logging to ensure security, transparency, and efficient operations.
-contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, ReentrancyGuard, Pausable {
+contract LAWPComplianceEngine is ILAWPComplianceEngine, AccessControl, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -55,6 +53,11 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
+    bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
+    bytes32 public constant CAMPAIGN_MANAGER_ROLE = keccak256("CAMPAIGN_MANAGER_ROLE");
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    bytes32 public constant SIGNER_ROLE = keccak256("SIGNER_ROLE");
+
     /// @notice Dedicated vault for isolating Investor RoC and Continuous Yield.
     ///         Funded exclusively by revenue routing (GRANT_INITIAL, GRANT_CONTINUOUS, RoC).
     ///         No campaign principal is held here - deposit capital flows to the Operational Vault.
@@ -66,17 +69,20 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @notice Impact Token contract for minting shares and tracking ownership/metadata.
     ILAWPImpactToken public immutable impactToken;
 
-    /// @notice Actor Registry for validating and pulling operational wallet addresses dynamically.
-    ILAWPActorRegistry public immutable registry;
-
     /// @notice The immutable ERC20 settlement token (cNGN) for all deposits, fees, and yield distributions.
     IERC20 public immutable cNGNToken;
 
-    /// @notice Multi-Sig Controller address authorized to route revenue and trigger emergency pauses.
-    address public multiSigController;
+    /// @notice LA2 (Project Management) wallet address
+    address public la2Wallet;
 
-    /// @notice Contribution Pool address authorized to initiate capital formation and mint fractional shares.
-    address public contributionPool;
+    /// @notice MVI1 (System Treasury) wallet address
+    address public mvi1Wallet;
+
+    /// @notice Operational Treasury wallet
+    address public operationalTreasuryWallet;
+
+    /// @notice DApp Team (Dev) wallet address
+    address public devWallet;
 
     /// @notice Current systemic risk fee in basis points (BPS) deducted from gross pool deposits.
     uint256 public riskFeeBPS;
@@ -136,31 +142,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     mapping(uint256 poolId => Pool poolData) public pools;
 
     /*//////////////////////////////////////////////////////////////
-                               MODIFIERS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Restricts execution strictly to the authorized Multi-Sig Controller.
-    modifier onlyMultiSig() {
-        _onlyMultiSig();
-        _;
-    }
-
-    /// @notice Restricts execution strictly to the authorized Contribution Pool.
-    modifier onlyContributionPool() {
-        _onlyContributionPool();
-        _;
-    }
-
-    function _onlyMultiSig() internal view {
-        if (msg.sender != multiSigController) revert LAWPComplianceEngine_UnauthorizedCaller();
-    }
-
-    function _onlyContributionPool() internal view {
-        if (msg.sender != contributionPool) revert LAWPComplianceEngine_UnauthorizedCaller();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                              CONSTRUCTOR
+                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the Compliance Engine with essential system dependencies.
@@ -168,7 +150,6 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @param _yieldVault Address of the LAWPYieldVault contract.
     /// @param _operationalVault Address of the ILAWPOperationalVault contract.
     /// @param _impactToken Address of the LAWPImpactToken contract.
-    /// @param _registry Address of the LAWPActorRegistry contract.
     /// @param _cNGNToken Address of the immutable cNGN ERC20 settlement token.
     /// @param _initialRiskFeeBPS Starting risk fee applied to all deposits (max 1000 BPS).
     constructor(
@@ -176,13 +157,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         address _yieldVault,
         address _operationalVault,
         address _impactToken,
-        address _registry,
         address _cNGNToken,
         uint256 _initialRiskFeeBPS
-    ) Ownable(_admin) {
+    ) {
         if (
-            _yieldVault == address(0) || _operationalVault == address(0)
-                || _impactToken == address(0) || _registry == address(0) || _cNGNToken == address(0)
+            _admin == address(0) || _yieldVault == address(0) || _operationalVault == address(0)
+                || _impactToken == address(0) || _cNGNToken == address(0)
         ) {
             revert LAWPComplianceEngine_ZeroAddress();
         }
@@ -193,43 +173,52 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         yieldVault = ILAWPYieldVault(_yieldVault);
         operationalVault = ILAWPOperationalVault(_operationalVault);
         impactToken = ILAWPImpactToken(_impactToken);
-        registry = ILAWPActorRegistry(_registry);
         cNGNToken = IERC20(_cNGNToken);
         riskFeeBPS = _initialRiskFeeBPS;
-    }
 
-    /// @notice Overridden to prevent the accidental renunciation of ownership.
-    function renounceOwnership() public view override onlyOwner {
-        revert("LAWPComplianceEngine: renounceOwnership is disabled");
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(GOVERNANCE_ROLE, _admin);
     }
 
     /*//////////////////////////////////////////////////////////////
                         ADMIN & CIRCUIT BREAKERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets the operational Multi-Sig Controller address.
-    /// @param _multiSig The address of the authorized Multi-Sig wallet.
-    function setMultiSigController(address _multiSig) external onlyOwner {
-        _requireContract(_multiSig);
-        address oldController = multiSigController;
-        multiSigController = _multiSig;
-
-        emit MultiSigControllerUpdated(oldController, _multiSig);
+    /// @notice Updates the LA2 (Project Management) wallet.
+    function setLA2Wallet(address _la2Wallet) external onlyRole(GOVERNANCE_ROLE) {
+        if (_la2Wallet == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        address oldWallet = la2Wallet;
+        la2Wallet = _la2Wallet;
+        emit ActorUpdated("LA2", oldWallet, _la2Wallet);
     }
 
-    /// @notice Sets the operational Contribution Pool address.
-    /// @param _contributionPool The address of the authorized Contribution Pool.
-    function setContributionPool(address _contributionPool) external onlyOwner {
-        _requireContract(_contributionPool);
-        address oldPool = contributionPool;
-        contributionPool = _contributionPool;
+    /// @notice Updates the MVI1 (System Treasury) wallet.
+    function setMVI1Wallet(address _mvi1Wallet) external onlyRole(GOVERNANCE_ROLE) {
+        if (_mvi1Wallet == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        address oldWallet = mvi1Wallet;
+        mvi1Wallet = _mvi1Wallet;
+        emit ActorUpdated("MVI1", oldWallet, _mvi1Wallet);
+    }
 
-        emit ContributionPoolUpdated(oldPool, _contributionPool);
+    /// @notice Updates the Operational Treasury wallet.
+    function setOperationalTreasuryWallet(address _operationalTreasuryWallet) external onlyRole(GOVERNANCE_ROLE) {
+        if (_operationalTreasuryWallet == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        address oldWallet = operationalTreasuryWallet;
+        operationalTreasuryWallet = _operationalTreasuryWallet;
+        emit ActorUpdated("OPERATIONAL_TREASURY", oldWallet, _operationalTreasuryWallet);
+    }
+
+    /// @notice Updates the DApp Team (Dev) wallet.
+    function setDevWallet(address _devWallet) external onlyRole(GOVERNANCE_ROLE) {
+        if (_devWallet == address(0)) revert LAWPComplianceEngine_ZeroAddress();
+        address oldWallet = devWallet;
+        devWallet = _devWallet;
+        emit ActorUpdated("DEV", oldWallet, _devWallet);
     }
 
     /// @notice Updates the systemic risk fee applied to incoming pool deposits.
     /// @param _newFeeBPS The new fee in basis points (must not exceed MAX_RISK_FEE).
-    function updateRiskFee(uint256 _newFeeBPS) external onlyOwner {
+    function updateRiskFee(uint256 _newFeeBPS) external onlyRole(GOVERNANCE_ROLE) {
         if (_newFeeBPS == 0 || _newFeeBPS > MAX_RISK_FEE) {
             revert LAWPComplianceEngine_InvalidRiskFee();
         }
@@ -240,15 +229,15 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /// @notice Instantly freezes capital formation and revenue routing in emergencies.
-    /// @dev Designed as a critical safety mechanism to mitigate potential exploits or systemic risks. Only the Owner can trigger this to ensure deliberate action during crises.
-    function emergencyPause() external onlyOwner {
+    /// @dev Designed as a critical safety mechanism to mitigate potential exploits or systemic risks. Only the Governance Role can trigger this to ensure deliberate action during crises.
+    function emergencyPause() external onlyRole(GOVERNANCE_ROLE) {
         _pause();
         emit EnginePaused(msg.sender);
     }
 
     /// @notice Unfreezes the system, allowing normal operations to resume.
-    /// @dev Strictly restricted to the Only Owner to ensure deliberate and secure unpausing after an emergency.
-    function unpause() external onlyOwner {
+    /// @dev Strictly restricted to the Governance Role to ensure deliberate and secure unpausing after an emergency.
+    function unpause() external onlyRole(GOVERNANCE_ROLE) {
         _unpause();
         emit EngineUnpaused(msg.sender);
     }
@@ -267,6 +256,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     ///      CEI NOTE: Pool registration (Effects) occurs before the ERC20 transfer (Interaction)
     ///      to preserve replay protection. The pool guard (`pools[_poolId].exists`) and
     ///      `nonReentrant` together eliminate any reentrancy window opened by this ordering.
+    /// @dev Only callable by the Campaign Manager Role.
     ///      Ledger credits (operationalBalances, poolTotalPrincipal) are written AFTER the
     ///      transfer so they reflect the actual amount; this is safe because the pool is already
     ///      locked before the first external call.
@@ -275,7 +265,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         uint256 _grossAmount,
         address[] calldata _contributors,
         uint256[] calldata _wadShares
-    ) external override onlyContributionPool whenNotPaused nonReentrant {
+    ) external override onlyRole(CAMPAIGN_MANAGER_ROLE) whenNotPaused nonReentrant {
         // Checks: Validate inputs, enforce maximum contributors bound, and confirm new poolId.
         if (pools[_poolId].exists) revert LAWPComplianceEngine_PoolAlreadyExists();
         if (_grossAmount == 0) revert LAWPComplianceEngine_InvalidAmount();
@@ -290,7 +280,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         _validateWAD(_wadShares);
 
         // Effects (partial): register pool to lock replay before Interaction
-        pools[_poolId] = Pool({ exists: true, createdAt: block.timestamp });
+        pools[_poolId] = Pool({exists: true, createdAt: block.timestamp});
         emit PoolCreated(_poolId, block.timestamp);
 
         // Snapshot the vault balance BEFORE the transfer.
@@ -309,7 +299,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         (uint256 riskFee, uint256 _netCapital) = _computeFees(actualReceived);
 
         // Credit the internal pull-ledger for the Operational Treasury.
-        address opTreasury = registry.operationalTreasuryWallet();
+        address opTreasury = operationalTreasuryWallet;
         if (opTreasury == address(0)) revert LAWPComplianceEngine_InvalidActor();
 
         operationalBalances[opTreasury] += (riskFee + _netCapital);
@@ -346,7 +336,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         uint256 _totalAmount,
         address _fundProvider,
         LAWPStructs.FlowType _flowType
-    ) external override whenNotPaused nonReentrant onlyMultiSig {
+    ) external override whenNotPaused nonReentrant onlyRole(OPERATOR_ROLE) {
         if (_totalAmount == 0) {
             revert LAWPComplianceEngine_InvalidAmount();
         }
@@ -371,7 +361,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPComplianceEngine
-    function migrateOperationalBalance(address _from, address _to) external override onlyOwner {
+    function migrateOperationalBalance(address _from, address _to) external override onlyRole(GOVERNANCE_ROLE) {
         if (_from == address(0) || _to == address(0)) revert LAWPComplianceEngine_ZeroAddress();
         uint256 amount = operationalBalances[_from];
         if (amount > 0) {
@@ -424,12 +414,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     }
 
     /// @inheritdoc ILAWPComplianceEngine
-    function claimYieldBatch(uint256[] calldata _tokenIds)
-        external
-        override
-        whenNotPaused
-        nonReentrant
-    {
+    function claimYieldBatch(uint256[] calldata _tokenIds) external override whenNotPaused nonReentrant {
         uint256 length = _tokenIds.length;
         if (length > MAX_BATCH_CLAIM) revert LAWPComplianceEngine_BatchTooLarge();
 
@@ -480,11 +465,9 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         }
     }
 
-    function _routeGrantInitial(uint256 _totalAmount, address _fundProvider, uint256 _poolId)
-        private
-    {
-        address la2 = registry.la2Wallet();
-        address mvi = registry.mvi1Wallet();
+    function _routeGrantInitial(uint256 _totalAmount, address _fundProvider, uint256 _poolId) private {
+        address la2 = la2Wallet;
+        address mvi = mvi1Wallet;
         if (la2 == address(0) || mvi == address(0)) revert LAWPComplianceEngine_InvalidActor();
 
         // System 1 target splits from requested amount (used only for transfer sizing):
@@ -517,13 +500,11 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         operationalBalances[mvi] += actualMvi;
     }
 
-    function _routeGrantContinuous(uint256 _totalAmount, address _fundProvider, uint256 _poolId)
-        private
-    {
-        address la2 = registry.la2Wallet();
-        address mvi = registry.mvi1Wallet();
-        address devWallet = registry.devWallet();
-        if (la2 == address(0) || mvi == address(0) || devWallet == address(0)) {
+    function _routeGrantContinuous(uint256 _totalAmount, address _fundProvider, uint256 _poolId) private {
+        address la2 = la2Wallet;
+        address mvi = mvi1Wallet;
+        address devWalletAddr = devWallet;
+        if (la2 == address(0) || mvi == address(0) || devWalletAddr == address(0)) {
             revert LAWPComplianceEngine_InvalidActor();
         }
 
@@ -560,7 +541,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         poolYieldTracker[_poolId] += actualColReceived;
         operationalBalances[la2] += actualLa2;
         operationalBalances[mvi] += actualMvi;
-        operationalBalances[devWallet] += actualDev;
+        operationalBalances[devWalletAddr] += actualDev;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -577,10 +558,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
     /// @param _tokenOwner The explicitly pre-fetched owner of the token to
     ///                    guarantee correct event emission.
     /// @return            claimable The aggregate cNGN amount owed to the token.
-    function _claimYieldForToken(uint256 _tokenId, address _tokenOwner)
-        internal
-        returns (uint256 claimable)
-    {
+    function _claimYieldForToken(uint256 _tokenId, address _tokenOwner) internal returns (uint256 claimable) {
         // ============================================================================
         // O(1) CUMULATIVE MATH ENGINE
         // ----------------------------------------------------------------------------
@@ -622,8 +600,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
         // 1. Continuous Yield Calculation (O(1) WAD Pro-Rata Math)
         uint256 totalYield = (poolYieldTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
-        uint256 claimableYield =
-            totalYield > yieldClaimed[_tokenId] ? totalYield - yieldClaimed[_tokenId] : 0;
+        uint256 claimableYield = totalYield > yieldClaimed[_tokenId] ? totalYield - yieldClaimed[_tokenId] : 0;
 
         // 2. RoC Calculation (Strictly capped at net principal)
         uint256 totalRoc = (poolRocTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
@@ -667,11 +644,7 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
 
     /// @notice Determines the systemic risk fee and final net capital from a gross deposit amount.
     /// @dev Named return variables utilized to avoid stack-too-deep complications in the caller.
-    function _computeFees(uint256 _grossAmount)
-        internal
-        view
-        returns (uint256 riskFee, uint256 netCapital)
-    {
+    function _computeFees(uint256 _grossAmount) internal view returns (uint256 riskFee, uint256 netCapital) {
         riskFee = (_grossAmount * riskFeeBPS) / TOTAL_BPS;
         netCapital = _grossAmount - riskFee;
     }
@@ -727,15 +700,12 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, Ownable2Step, Reentrancy
         LAWPStructs.TokenData memory data = impactToken.getTokenData(_tokenId);
 
         // WAD math: multiply by share (≤ 1e18), then divide by 1e18.
-        uint256 totalYieldForToken =
-            (poolYieldTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
-        uint256 claimableYield = totalYieldForToken > yieldClaimed[_tokenId]
-            ? totalYieldForToken - yieldClaimed[_tokenId]
-            : 0;
+        uint256 totalYieldForToken = (poolYieldTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
+        uint256 claimableYield =
+            totalYieldForToken > yieldClaimed[_tokenId] ? totalYieldForToken - yieldClaimed[_tokenId] : 0;
 
         uint256 totalRocForToken = (poolRocTracker[data.poolId] * data.poolShareWAD) / TOTAL_SHARES;
-        uint256 claimableRoc =
-            totalRocForToken > data.rocReturned ? totalRocForToken - data.rocReturned : 0;
+        uint256 claimableRoc = totalRocForToken > data.rocReturned ? totalRocForToken - data.rocReturned : 0;
 
         uint256 maxRemainingRoc = data.netPrincipal - data.rocReturned;
         if (claimableRoc > maxRemainingRoc) {

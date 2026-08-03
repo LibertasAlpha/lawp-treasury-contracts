@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
-import { ILAWPMultiSigController } from "../interfaces/ILAWPMultiSigController.sol";
-import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
+import {LAWPStructs} from "../libraries/LAWPStructs.sol";
+import {ILAWPMultiSigController} from "../interfaces/ILAWPMultiSigController.sol";
+import {ILAWPComplianceEngine} from "../interfaces/ILAWPComplianceEngine.sol";
 
 /// @title LAWPMultiSigController
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -17,12 +16,12 @@ import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
 ///      validate real-world Planbok deposits, then securely triggers the Compliance Engine.
 ///      Designed intentionally narrower than Safe to minimize attack surfaces,
 ///      focusing purely on verifying payload authenticity.
-contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, ReentrancyGuard, EIP712 {
+contract LAWPMultiSigController is ILAWPMultiSigController, ReentrancyGuard, EIP712 {
     /*//////////////////////////////////////////////////////////////
                            MULTI-SIG ERRORS
     //////////////////////////////////////////////////////////////*/
     error LAWPMultiSigController_Expired();
-    error LAWPMultiSigController_NotASigner();
+    error LAWPMultiSigController_UnauthorizedCaller();
     error LAWPMultiSigController_ZeroAddress();
     error LAWPMultiSigController_InvalidPool();
     error LAWPMultiSigController_InvalidPayload();
@@ -43,24 +42,13 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     ///         The engine only accepts commands from this specific controller.
     ILAWPComplianceEngine public immutable engine;
 
+    bytes32 public constant SIGNER_ROLE = keccak256("SIGNER_ROLE");
+    bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
+
     /// @notice The EIP-712 TypeHash for the Proposal struct.
     /// @dev    Hash of the struct signature used to securely pack the data for signing.
-    bytes32 public constant PROPOSAL_TYPEHASH = keccak256(
-        "Proposal(uint256 proposalId,uint256 poolId,uint256 totalAmount,uint8 flowType,uint256 deadline)"
-    );
-
-    /// @notice Hard upper bound for active board members.
-    /// @dev    Anti-griefing measure to completely eliminate
-    ///         unbounded loops during signature validation.
-    uint256 public constant MAX_SIGNERS = 20;
-
-    /// @notice Registry of authorized board members.
-    /// @dev SECURITY ASSUMPTION: Signers MUST be standard Externally Owned Accounts (EOAs).
-    ///      Smart contract signatures (ERC-1271) are explicitly unsupported.
-    mapping(address signer => bool authorized) public isSigner;
-
-    /// @notice Tracks the exact number of active signers to prevent threshold lockouts.
-    uint256 public signerCount;
+    bytes32 public constant PROPOSAL_TYPEHASH =
+        keccak256("Proposal(uint256 proposalId,uint256 poolId,uint256 totalAmount,uint8 flowType,uint256 deadline)");
 
     /// @notice The minimum number of valid signatures required to execute a proposal.
     uint256 public threshold;
@@ -75,44 +63,19 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the controller with the required EIP-712 domain.
-    /// @param _admin The initial owner (Admin Safe). Address(0) triggers native OZ v5 revert.
     /// @param _engine The address of the deployed LAWP Compliance Engine.
-    /// @param _initialSigners Array of initial board members (EOAs only).
     /// @param _initialThreshold The starting signature requirement.
-    constructor(
-        address _admin,
-        address _engine,
-        address[] memory _initialSigners,
-        uint256 _initialThreshold
-    ) Ownable(_admin) EIP712("LAWP MultiSig", "1") {
+    constructor(address _engine, uint256 _initialThreshold) EIP712("LAWP MultiSig", "1") {
         if (_engine == address(0)) {
             revert LAWPMultiSigController_ZeroAddress();
         }
-
-        uint256 length = _initialSigners.length;
-        if (length == 0 || _initialThreshold == 0 || _initialThreshold > length) {
+        if (_initialThreshold == 0) {
             revert LAWPMultiSigController_InvalidThreshold();
-        }
-        if (length > MAX_SIGNERS) revert LAWPMultiSigController_TooManySigners();
-
-        for (uint256 i = 0; i < length; i++) {
-            address signer = _initialSigners[i];
-            if (signer == address(0) || isSigner[signer]) {
-                revert LAWPMultiSigController_InvalidSignatures();
-            }
-            isSigner[signer] = true;
-            emit SignerAdded(signer);
         }
 
         engine = ILAWPComplianceEngine(_engine);
-        signerCount = length;
         threshold = _initialThreshold;
         emit ThresholdUpdated(0, _initialThreshold);
-    }
-
-    /// @dev Overridden to prevent accidental renunciation of ownership.
-    function renounceOwnership() public view override onlyOwner {
-        revert("LAWPMultiSigController: renounceOwnership is disabled");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -189,9 +152,7 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
         uint256 _deadline
     ) public view returns (bytes32) {
         bytes32 structHash = keccak256(
-            abi.encode(
-                PROPOSAL_TYPEHASH, _proposalId, _poolId, _totalAmount, uint8(_flowType), _deadline
-            )
+            abi.encode(PROPOSAL_TYPEHASH, _proposalId, _poolId, _totalAmount, uint8(_flowType), _deadline)
         );
         return _hashTypedDataV4(structHash);
     }
@@ -201,33 +162,11 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ILAWPMultiSigController
-    function addSigner(address _signer) external override onlyOwner {
-        if (_signer == address(0)) revert LAWPMultiSigController_ZeroAddress();
-        if (isSigner[_signer]) revert LAWPMultiSigController_SignerAlreadyExists();
-        if (signerCount >= MAX_SIGNERS) revert LAWPMultiSigController_TooManySigners();
-
-        isSigner[_signer] = true;
-        signerCount++;
-
-        emit SignerAdded(_signer);
-    }
-
-    /// @inheritdoc ILAWPMultiSigController
-    function removeSigner(address _signer) external override onlyOwner {
-        if (!isSigner[_signer]) revert LAWPMultiSigController_NotASigner();
-
-        // Prevent removing a signer if it drops the total count below the required threshold
-        if (signerCount - 1 < threshold) revert LAWPMultiSigController_InvalidThreshold();
-
-        isSigner[_signer] = false;
-        signerCount--;
-
-        emit SignerRemoved(_signer);
-    }
-
-    /// @inheritdoc ILAWPMultiSigController
-    function updateThreshold(uint256 _newThreshold) external override onlyOwner {
-        if (_newThreshold == 0 || _newThreshold > signerCount) {
+    function updateThreshold(uint256 _newThreshold) external override {
+        if (!IAccessControl(address(engine)).hasRole(GOVERNANCE_ROLE, msg.sender)) {
+            revert LAWPMultiSigController_UnauthorizedCaller();
+        }
+        if (_newThreshold == 0) {
             revert LAWPMultiSigController_InvalidThreshold();
         }
 
@@ -277,7 +216,7 @@ contract LAWPMultiSigController is ILAWPMultiSigController, Ownable2Step, Reentr
             // This is a deliberate design choice to minimize complexity and attack surfaces.
             // The `ecrecover` function returns the address that signed the message. If the signature is invalid, it returns address(0).
             address currentSigner = ecrecover(digest, v, r, s);
-            if (currentSigner == address(0) || !isSigner[currentSigner]) {
+            if (currentSigner == address(0) || !IAccessControl(address(engine)).hasRole(SIGNER_ROLE, currentSigner)) {
                 revert LAWPMultiSigController_InvalidSignatures();
             }
 

@@ -16,29 +16,17 @@ interface ILAWPContributionPool {
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted when the Compliance Engine address is updated.
-    event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
-
     /// @notice Emitted when the admin opens a new contribution pool slot.
     event PoolCreated(
-        uint256 indexed poolId,
-        uint256 indexed enginePoolId,
-        uint256 goal,
-        uint256 startTime,
-        uint256 endTime
+        uint256 indexed poolId, uint256 indexed enginePoolId, uint256 goal, uint256 startTime, uint256 endTime
     );
 
     /// @notice Emitted when a contributor successfully deposits cNGNToken into a pool.
-    event ContributionMade(
-        uint256 indexed poolId, address indexed contributor, uint256 amount, uint256 newTotalRaised
-    );
+    event ContributionMade(uint256 indexed poolId, address indexed contributor, uint256 amount, uint256 newTotalRaised);
 
     /// @notice Emitted when settle() successfully routes funds into the ComplianceEngine.
     event PoolSettled(
-        uint256 indexed poolId,
-        uint256 indexed enginePoolId,
-        uint256 totalRaised,
-        uint256 contributorCount
+        uint256 indexed poolId, uint256 indexed enginePoolId, uint256 totalRaised, uint256 contributorCount
     );
 
     /// @notice Emitted when a contributor reclaims their contribution from a failed pool.
@@ -85,7 +73,7 @@ interface ILAWPContributionPool {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Opens a new contribution pool slot.
-    /// @dev Only callable by the contract owner.
+    /// @dev Only callable by the Campaign Manager Role.
     ///      Increments the internal nextPoolId counter and stores per-pool config.
     ///      `_maxContributors` must be ≤ 20 to satisfy the ComplianceEngine hard cap.
     /// @param _enginePoolId The poolId that will be passed to processPoolDeposit at settlement.
@@ -125,7 +113,7 @@ interface ILAWPContributionPool {
     function contribute(uint256 _poolId, uint256 _amount) external;
 
     /// @notice Finalises a successful pool by routing funds to the ComplianceEngine.
-    /// @dev Callable by the admin after the deadline has passed and totalRaised >= goal.
+    /// @dev Callable by the Campaign Manager Role after the deadline has passed and totalRaised >= goal.
     ///      Computes each contributor's pro-rata WAD share (last contributor absorbs dust
     ///      to guarantee the array sums to exactly 1e18).
     ///      Approves the engine for totalRaised, calls processPoolDeposit, then resets
@@ -151,10 +139,7 @@ interface ILAWPContributionPool {
     /// @notice Returns a contributor's deposit record for a specific pool.
     /// @param _poolId      The internal pool index.
     /// @param _contributor The contributor address to query.
-    function getContribution(uint256 _poolId, address _contributor)
-        external
-        view
-        returns (ContributionRecord memory);
+    function getContribution(uint256 _poolId, address _contributor) external view returns (ContributionRecord memory);
 
     /// @notice Returns the ordered list of contributor addresses for a pool.
     /// @dev Order matches the order contributions were first received.
