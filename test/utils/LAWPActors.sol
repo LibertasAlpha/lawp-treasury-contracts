@@ -15,6 +15,7 @@ contract LAWPActors is Test {
     address la2Wallet = makeAddr("la2Wallet");
     address mvi1Wallet = makeAddr("mvi1Wallet");
     address devWallet = makeAddr("devWallet");
+    address opTreasuryWallet = makeAddr("opTreasury");
 
     // Multi-Sig Signers (Keys for EIP-712 signing)
     uint256 signer1Key = 0x111;

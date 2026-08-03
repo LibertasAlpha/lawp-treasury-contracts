@@ -63,6 +63,7 @@ contract LAWPFixture is LAWPActors {
         engine.setLA2Wallet(la2Wallet);
         engine.setMVI1Wallet(mvi1Wallet);
         engine.setDevWallet(devWallet);
+        engine.setOperationalTreasuryWallet(opTreasuryWallet);
 
         engine.grantRole(LAWPConstants.CAMPAIGN_MANAGER_ROLE, campaignManager);
         engine.grantRole(LAWPConstants.OPERATOR_ROLE, operator);
