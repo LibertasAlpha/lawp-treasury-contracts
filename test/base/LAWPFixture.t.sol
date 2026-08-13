@@ -28,21 +28,12 @@ contract LAWPFixture is LAWPActors {
         // 1. Deploy Mock Asset
         token = new MockCNGN();
 
-        // 2. Precompute Engine Address to resolve circular dependency
-        // Current nonce is used for token, so next nonces will be:
-        // +0: opVault
-        // +1: yieldVault
-        // +2: impactToken
-        // +3: engine
-        uint64 nonce = vm.getNonce(address(this));
-        address computedEngine = vm.computeCreateAddress(address(this), nonce + 3);
+        // 2. Deploy impact token & Vaults
+        opVault = new LAWPOperationalVault(address(token));
+        yieldVault = new LAWPYieldVault(address(token));
+        impactToken = new LAWPImpactToken("ipfs://QmBase/");
 
-        // 3. Deploy Satellites & Vaults using computed Engine address
-        opVault = new LAWPOperationalVault(address(token), computedEngine);
-        yieldVault = new LAWPYieldVault(address(token), computedEngine);
-        impactToken = new LAWPImpactToken(computedEngine, "ipfs://QmBase/");
-
-        // 4. Deploy Central Hub (ComplianceEngine)
+        // 3. Deploy Central Brain (ComplianceEngine)
         engine = new LAWPComplianceEngine(
             governance, // admin
             address(yieldVault), // yieldVault
@@ -52,9 +43,12 @@ contract LAWPFixture is LAWPActors {
             50 // initialRiskFeeBPS
         );
 
-        require(address(engine) == computedEngine, "CREATE address mismatch");
+        // 4. Securely link the Engine to the Vaults
+        opVault.setComplianceEngine(address(engine));
+        yieldVault.setComplianceEngine(address(engine));
+        impactToken.setComplianceEngine(address(engine));
 
-        // 5. Deploy edge satellites
+        // 5. Deploy other contracts
         pool = new LAWPContributionPool(address(token), address(engine));
         multisig = new LAWPMultiSigController(address(engine), 2); // 2 of 3 threshold
 

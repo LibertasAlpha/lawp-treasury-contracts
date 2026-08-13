@@ -26,6 +26,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, ReentrancyGuard {
     error LAWPImpactToken_InvalidPrincipal();
     error LAWPImpactToken_UnauthorizedCaller();
     error LAWPImpactToken_ExceedsPrincipalCap();
+    error LAWPImpactToken_AlreadyInitialized();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -37,8 +38,8 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, ReentrancyGuard {
     ///         less than 1 quintillionth of the pool economically impossible.
     uint256 public constant TOTAL_SHARES = 1e18;
 
-    /// @notice The immutable LAWPComplianceEngine contract that controls minting, updates, and claims.
-    address public immutable complianceEngine;
+    /// @notice The explicitly authorized orchestrator contract that controls minting, updates, and claims.
+    address public complianceEngine;
 
     /// @notice The base URI for all token metadata. Since all unique data is onchain, this is a static URI pointing to a generic JSON schema on IPFS that can be used for all tokens.
     string public baseTokenURI;
@@ -58,12 +59,18 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, ReentrancyGuard {
         if (msg.sender != complianceEngine) revert LAWPImpactToken_UnauthorizedCaller();
     }
 
-    constructor(address _engine, string memory _uri) ERC721("LAWP Impact Token", "LAWP-IT") {
-        if (_engine == address(0)) revert LAWPImpactToken_ZeroAddress();
+    constructor(string memory _uri) ERC721("LAWP Impact Token", "LAWP-IT") {
         if (bytes(_uri).length == 0) revert LAWPImpactToken_InvalidBaseURI();
+        baseTokenURI = _uri;
+    }
+
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external {
+        if (_engine == address(0)) revert LAWPImpactToken_ZeroAddress();
+        if (complianceEngine != address(0)) revert LAWPImpactToken_AlreadyInitialized();
 
         complianceEngine = _engine;
-        baseTokenURI = _uri;
     }
 
     /*//////////////////////////////////////////////////////////////

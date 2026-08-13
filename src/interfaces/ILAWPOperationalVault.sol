@@ -19,10 +19,13 @@ interface ILAWPOperationalVault {
                                EXECUTION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Executes an outbound ERC-20 transfer.
-    /// @dev Strictly protected by the onlyEngine modifier. Follows CEI pattern inherently
-    /// as it only acts upon fully resolved Engine state.
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external;
+
+    /// @notice Executes a token transfer out of the vault.
+    /// @dev Can only be called by the Compliance Engine.
     /// @param _to The destination address.
-    /// @param _amount The exact amount of cNGN to transfer.
+    /// @param _amount The amount of cNGN to transfer.
     function executeTransfer(address _to, uint256 _amount) external;
 }

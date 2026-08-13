@@ -22,13 +22,14 @@ contract LAWPYieldVault is ILAWPYieldVault, ReentrancyGuard {
     error LAWPYieldVault_InvalidAmount();
     error LAWPYieldVault_InvalidAddress();
     error LAWPYieldVault_UnauthorizedCaller();
+    error LAWPYieldVault_AlreadyInitialized();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The immutable, explicitly authorized orchestrator contract (LAWPComplianceEngine).
-    address public immutable complianceEngine;
+    /// @notice The explicitly authorized orchestrator contract (LAWPComplianceEngine).
+    address public complianceEngine;
 
     /// @notice The immutable ERC20 settlement token (cNGN) for all deposits, fees, and yield distributions.
     IERC20 public immutable cNGNToken;
@@ -51,13 +52,19 @@ contract LAWPYieldVault is ILAWPYieldVault, ReentrancyGuard {
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the vault with the asset token and binds it to the Compliance Engine.
+    /// @notice Initializes the vault with the asset token.
     /// @param _cNGNToken Address of the stablecoin (cNGN).
-    /// @param _engine Address of the LAWPComplianceEngine.
-    constructor(address _cNGNToken, address _engine) {
-        if (_cNGNToken == address(0) || _engine == address(0)) revert LAWPYieldVault_InvalidAddress();
-
+    constructor(address _cNGNToken) {
+        if (_cNGNToken == address(0)) revert LAWPYieldVault_InvalidAddress();
         cNGNToken = IERC20(_cNGNToken);
+    }
+
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external {
+        if (_engine == address(0)) revert LAWPYieldVault_InvalidAddress();
+        if (complianceEngine != address(0)) revert LAWPYieldVault_AlreadyInitialized();
+
         complianceEngine = _engine;
     }
 

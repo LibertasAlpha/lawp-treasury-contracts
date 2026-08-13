@@ -20,9 +20,9 @@ contract LAWPComplianceEngineTest is LAWPFixture {
         super.setUp();
     }
 
-    // ==========================================
-    // VIEW FUNCTIONS AND EDGE CASES
-    // ==========================================
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS AND EDGE CASES
+    //////////////////////////////////////////////////////////////*/
 
     function test_ViewFunctions() public {
         test_ProcessPoolDeposit();
@@ -185,9 +185,9 @@ contract LAWPComplianceEngineTest is LAWPFixture {
         vm.stopPrank();
     }
 
-    // ==========================================
-    // ROLES & CONFIGURATION
-    // ==========================================
+    /*//////////////////////////////////////////////////////////////
+                            ROLES & CONFIGURATION
+    //////////////////////////////////////////////////////////////*/
 
     function test_AdminCanUpdateWallets() public {
         vm.startPrank(governance);
@@ -287,9 +287,9 @@ contract LAWPComplianceEngineTest is LAWPFixture {
         new LAWPComplianceEngine(address(1), address(1), address(1), address(1), address(1), 1001);
     }
 
-    // ==========================================
-    // POOL DEPOSIT PROCESSING
-    // ==========================================
+    /*//////////////////////////////////////////////////////////////
+                            POOL DEPOSIT PROCESSING
+    //////////////////////////////////////////////////////////////*/
 
     function test_ProcessPoolDeposit() public {
         uint256 grossAmount = 1000e6;
@@ -427,27 +427,25 @@ contract LAWPComplianceEngineTest is LAWPFixture {
         vm.stopPrank();
     }
 
-    // ==========================================
-    // FEE ON TRANSFER / DELTA MEASUREMENT
-    // ==========================================
+    /*//////////////////////////////////////////////////////////////
+                            FEE ON TRANSFER / DELTA MEASUREMENT
+    //////////////////////////////////////////////////////////////*/
 
     function test_ProcessPoolDepositFeeOnTransfer() public {
         // We will deploy a new ComplianceEngine configured with the MockFOTToken to test exact accounting.
         MockFOTToken fotToken = new MockFOTToken();
 
-        uint64 nonce = vm.getNonce(address(this));
-        address computedEngine = vm.computeCreateAddress(address(this), nonce + 3);
-
-        LAWPOperationalVault fotOpVault = new LAWPOperationalVault(address(fotToken), computedEngine);
-        LAWPYieldVault fotYieldVault = new LAWPYieldVault(address(fotToken), computedEngine);
-        // We can reuse the original impactToken address since the token just checks permissions,
-        // wait, we need a new impact token for the new engine!
-        LAWPImpactToken fotImpact = new LAWPImpactToken(computedEngine, "ipfs://");
+        LAWPOperationalVault fotOpVault = new LAWPOperationalVault(address(fotToken));
+        LAWPYieldVault fotYieldVault = new LAWPYieldVault(address(fotToken));
+        LAWPImpactToken fotImpact = new LAWPImpactToken("ipfs://");
 
         LAWPComplianceEngine fotEngine = new LAWPComplianceEngine(
             governance, address(fotYieldVault), address(fotOpVault), address(fotImpact), address(fotToken), 50
         );
-        require(address(fotEngine) == computedEngine);
+
+        fotOpVault.setComplianceEngine(address(fotEngine));
+        fotYieldVault.setComplianceEngine(address(fotEngine));
+        fotImpact.setComplianceEngine(address(fotEngine));
 
         fotToken.mint(campaignManager, 1000e6);
 
@@ -482,9 +480,9 @@ contract LAWPComplianceEngineTest is LAWPFixture {
         assertEq(fotToken.balanceOf(address(fotOpVault)), 950e6);
     }
 
-    // ==========================================
-    // ROUTE ALLOCATIONS (SYSTEM 1 & 2)
-    // ==========================================
+    /*//////////////////////////////////////////////////////////////
+                            ROUTE ALLOCATIONS (SYSTEM 1 & 2)
+    //////////////////////////////////////////////////////////////*/
 
     function test_RevertIf_RouteRoCZeroActualReceived() public {
         MockFOTToken feeToken = new MockFOTToken();
@@ -700,9 +698,9 @@ contract LAWPComplianceEngineTest is LAWPFixture {
         assertEq(engine.operationalBalances(opTreasuryWallet), 1000e6); // 1000e6 from pool deposit + 0 from continuous grant
     }
 
-    // ==========================================
-    // CLAIM LOGIC
-    // ==========================================
+    /*//////////////////////////////////////////////////////////////
+                            CLAIM LOGIC
+    //////////////////////////////////////////////////////////////*/
 
     function test_ClaimYieldAndRoc() public {
         test_ProcessPoolDeposit();

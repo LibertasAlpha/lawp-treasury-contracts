@@ -445,10 +445,6 @@ contract LAWPComplianceEngine is ILAWPComplianceEngine, AccessControl, Reentranc
                                PRIVATE HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _requireContract(address addr) internal view {
-        if (addr.code.length == 0) revert LAWPComplianceEngine_ZeroAddress();
-    }
-
     function _routeRoC(uint256 _poolId, uint256 _totalAmount, address _fundProvider) private {
         // Balance-delta: snapshot -> transfer -> measure.
         uint256 yieldBalBefore = cNGNToken.balanceOf(address(yieldVault));

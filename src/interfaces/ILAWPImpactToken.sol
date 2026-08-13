@@ -24,8 +24,13 @@ interface ILAWPImpactToken is IERC721 {
 
     function setBaseURI(string memory _uri) external;
 
-    /// @notice Mints a new Impact Token. Strictly gated to the Compliance Engine.
-    /// @param to The address of the contributor.
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external;
+
+    /// @notice Mints a new fractional token to a contributor.
+    /// @dev Strict access control: only callable by LAWPComplianceEngine.
+    /// @param to Receiver address.
     /// @param netPrincipal The locked capital after the risk fee deduction.
     /// @param poolShareWAD The proportional share as a WAD fraction (1e18 = 100%).
     /// @param poolId The project deployment pool ID.
