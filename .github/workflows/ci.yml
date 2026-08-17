@@ -5,42 +5,44 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: ["main"]
   pull_request:
-    branches: [main]
-  workflow_dispatch:
+    branches: ["main", "audit-readiness"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  check:
-    name: Foundry project
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
+env:
+  FOUNDRY_PROFILE: ci
 
+jobs:
+  build-and-test:
+    name: Foundry CI
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout code
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
           submodules: recursive
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
 
       - name: Show Forge version
         run: forge --version
 
-      - name: Run Forge fmt
-        run: forge fmt --check
-
-      - name: Run Forge lint
-        run: forge lint
-
       - name: Run Forge build
         run: forge build --sizes
 
+      - name: Run Forge fmt check
+        run: forge fmt --check
+
       - name: Run Forge tests
         run: forge test -vvv
+
+      - name: Run Forge coverage
+        run: forge coverage

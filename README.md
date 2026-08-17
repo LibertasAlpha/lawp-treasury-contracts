@@ -1,170 +1,145 @@
-# Libertas Alpha Water Project (LAWP) v1.0.0
+# LAWP Treasury Contracts v1.0.0
 
 ## Protocol Summary
 
-The Libertas Alpha Water Project (LAWP) is an institutional-grade hybrid routing protocol designed to bridge real-world fiat revenue (via the Planbok system) with on-chain fractional Impact Equity. By separating asset custody from routing logic through a Zero-Custody Switchboard and Dual-Treasury Architecture, the protocol translates strict non-profit (LTD/GTE) legal mandates into impassable, immutable math. It features an O(1) continuous yield engine, direct Admin Safe governance, and cryptographically verified off-chain reporting to ensure transparency, solvency, and decentralized accountability.
+The Libertas Alpha Water Project (LAWP) is the foundational pilot Micro Venture Initiative (MVI) for the Libertas Alpha Network. It is engineered to transform local water consumption by establishing a profitable, scalable, and decentralized economic system bound to a non-profit mandate (aligned with SDGs 1, 6, 9, 12, and 17). The smart contracts establish a Multi-Signature Community Treasury that pools liquidity to fund real-world assets (water dispenser infrastructure). The protocol hard-codes financial flows to ensure transparent capital recovery (RoC) and continuous impact operational grants, issuing ERC721 Impact Tokens as receipts for measurable social achievement.
 
-**Additional documentation:**
+Additional documentation: [LAWP_WHITEPAPER](./LAWP_WHITEPAPER.md)
 
-- [Threat Model](https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/threat_model.md)
-- [Testing Invariants](https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/invariants.md)
-- [Rekt Test Answers](https://github.com/LibertasAlpha/lawp-treasury-contracts/blob/main/docs/rekt_test_answers.md)
+### Key Features
 
-## Key Features
+- **Real-World Asset (RWA) Liquidity Pooling**: Transparent aggregation of operational liquidity (cNGN) to fund physical water infrastructure.
+- **Automated Yield Segregation**: Split-vault architecture that algorithmically routes pool settlements to fund capital recovery (RoC) and distribute operational surplus (e.g., to LA2, MVI1, and Human Nodes) as defined by the protocol's financial model.
+- **Impact Equity System**: Issuance of ERC721 Impact Tokens that serve as immutable receipts for contributions and grant continuous yield rights.
+- **Threshold-Gated Security**: Multi-signature consensus required to route operational surplus, ensuring decentralized treasury management.
 
-- **Zero-Custody Switchboard:** The Compliance Engine holds a 0 balance, routing funds directly from the off-chain Relayer or Injector Wallet to specific vaults in a single hop.
-- **Dual-Treasury Segregation:** Pure physical separation of Campaign Capital (`LAWPOperationalVault`, funded at deposit time) and Investor Yield/RoC (`LAWPYieldVault`, funded exclusively by revenue routing).
-- **100% Pull-over-Push Accounting:** Both investors and operational wallets (LA2, Dev, Operational Treasury) must proactively claim their funds. Operational wallet failures or blocklists can never block investor yields.
-- **Trustless Revenue Routing:** Enforces strict mathematical splits for Initial Grants (30/50/20) and Continuous Grants (10/55/25/10) without manual intervention.
-- **Atomic Transfer Hook (Double-Spend Protection):** Forcefully flushes pending yields upon ERC-721 token transfer, ensuring secondary market buyers receive a clean state.
-- **Emergency Guardian Pattern:** The Admin Safe owner can instantly pause/unpause the system to mitigate potential exploits or systemic risks.
-- **Fractional Dust Conservation:** Absorbs all wei rounding errors natively, mathematically guaranteeing 100% protocol solvency.
-- **Immutable Settlement Token:** The cNGN token address is permanently fixed at deployment via `immutable` for all deposits, fees, and yield distributions.
+---
 
 ## System Architecture
 
 ### Core Components
 
-- **LAWPComplianceEngine (The Zero-Custody Switchboard)**
-  - **Responsibility:** Calculates proportional equity, deducts systemic risk fees, and executes mathematical routing. Updates internal accounting ledgers and instructs the movement of tokens without holding funds.
-  - **Key Functions:** `processPoolDeposit()`, `routeOperationalAllocation()`, `claimYield()`, `claimOperationalFunds()`
+- **LAWPContributionPool**
+  - Responsibility: Handles user contributions, campaign lifecycles (ACTIVE, SETTLED, CANCELLED), and refund logic.
+  - Key Functions: `contribute()`, `settle()`, `claimRefund()`, `createPool()`
 
-- **LAWPContributionPool (The Aggregator)**
-  - **Responsibility:** Decentralized and non-custodial staging area for user capital. Aggregates fractional deposits into a single pool until a goal is met, then atomicaly settles with the Compliance Engine. Allows refunds if the goal is not met by the deadline.
-  - **Key Functions:** `createPool()`, `contribute()`, `settle()`, `claimRefund()`
+- **LAWPComplianceEngine**
+  - Responsibility: Acts as the central orchestration and accounting hub, managing yield distributions, operational routing, and token integrations.
+  - Key Functions: `processPoolDeposit()`, `claimYield()`, `routeOperationalAllocation()`
 
-- **LAWPYieldVault (Vault A: Investor Yield & RoC)**
-  - **Responsibility:** Subordinate vault holding Return of Contribution (RoC) and pending Yield accumulated via revenue routing. Receives **no funds at deposit time** - it is funded exclusively by `routeOperationalAllocation` (GRANT_INITIAL, GRANT_CONTINUOUS, RoC flows). Contains no public deposit functions to prevent orphaned capital.
-  - **Key Functions:** `executeTransfer()`
+- **LAWPOperationalVault & LAWPYieldVault**
+  - Responsibility: "Dumb" vaults that securely segregate operational funds from yield funds, isolated from direct user interaction.
+  - Key Functions: `executeTransfer()`
 
-- **LAWPOperationalVault (Vault B: Campaign Capital & Protocol Funds)**
-  - **Responsibility:** Subordinate vault receiving the **full gross deposit** on every pool deposit (risk fee + net campaign capital). Also receives operational payroll splits from revenue routing (Dev, LA2, MVI1). Contains no public deposit functions.
-  - **Key Functions:** `executeTransfer()`
+- **LAWPImpactToken (ERC721)**
+  - Responsibility: Tracks fractional pool ownership and cumulative Return of Capital (RoC) for each contributor.
+  - Key Functions: `mint()`, `updateRocReturned()`
 
-- **LAWPImpactToken (The Equity)**
-  - **Responsibility:** ERC-721 implementation representing fractional ownership of a deployment pool. Houses the state-desync interception hook.
-  - **Key Functions:** `mint()`, `updateRocReturned()`, `getTokenData()`, `_update()`
+- **LAWPMultiSigController**
+  - Responsibility: Validates threshold signatures from authorized operators to execute operational grants.
+  - Key Functions: `executeProposal()`
 
-- **LAWPMultiSigController (The Bridge)**
-  - **Responsibility:** An EIP-712 ECDSA verification engine. Validates off-chain signatures from the Operational Board to confirm real-world fiat generation before triggering the Compliance Engine.
-  - **Key Functions:** `executeProposal()`, `getProposalDigest()`, `addSigner()`
+---
 
-- **LAWPActorRegistry (The Directory)**
-  - **Responsibility:** Centralized registry for dynamic operational wallets (LA2, MVI1, Operational Treasury, Dev Team) to allow updatability without migrating the Engine.
-  - **Key Functions:** `setLA2Wallet()`, `setMVI1Wallet()`, `setOperationalTreasuryWallet()`, `setDevWallet()`
+## Component Interaction Flow
 
-### Component Interaction Flow
+1. User -> `LAWPContributionPool`
+   - Calls `contribute()` with a defined cNGN amount to fund an active campaign.
 
-1. **Real World to Bridge**
-   - Operators convert fiat from 3 segregated physical bank accounts (Activator, Service, RoC) to cNGN in the "Injector Wallet".
-   - Board members observe a fiat to CNGN on-ramp in the Injector Wallet. They construct the EIP-712 payload (`proposalId`, `poolId`, `deadline`, etc.) and sign it locally.
+2. Campaign Manager -> `LAWPContributionPool`
+   - Calls `settle()` once the pool timeframe completes successfully.
 
-2. **User (Relayer) -> LAWPMultiSigController**
-   - Calls `executeProposal` with an EIP-712 payload containing signatures, the `poolId`, the generated `totalAmount`, and the `flowType`.
+3. `LAWPContributionPool` -> `LAWPComplianceEngine`
+   - Triggers `processPoolDeposit()` to segregate the funds.
+   - Funds are routed to `LAWPOperationalVault` and `LAWPYieldVault` strictly according to the protocol's predefined surplus distribution model.
 
-3. **LAWPMultiSigController -> LAWPMultiSigController (Internal)**
-   - Validates the digest, checks the 3-of-5 signature threshold, and verifies cryptographic replay protection (nonce mapping).
+4. `LAWPComplianceEngine` -> `LAWPImpactToken`
+   - Mints an ERC721 Impact Token to the contributor, entitling them to future yield.
 
-4. **LAWPMultiSigController -> LAWPComplianceEngine**
-   - Calls `routeOperationalAllocation()` with the validated revenue parameters.
+5. Final State
+   - The pool is SETTLED. Funds are secured in the vaults. Users hold Impact Tokens representing their capital recovery rights.
 
-5. **LAWPComplianceEngine -> Vaults & Internal Ledgers**
-   - The Engine pulls the Yield portion directly from the Injector Wallet to the `LAWPYieldVault`.
-   - The Engine pulls the Operational portion directly from the Injector Wallet to the `LAWPOperationalVault`.
-   - Credits the O(1) `poolYieldTracker` (for investors) and the `operationalBalances` ledger (for operators).
+---
 
-6. **Final State**
-   - Funds rest safely in the dual vaults.
-   - Impact Token holders and Operational Teams must manually trigger claims to pull their respective balances permissionlessly.
+## Example Execution
 
-### Example Execution
-
-#### Yield Claim Process (Pull-over-Push)
+### claimYield (Continuous Impact Grant)
 
 1. User calls:
 
    ```solidity
-     engine.claimYield(tokenId);
+   lawpComplianceEngine.claimYield(tokenId);
    ```
 
-2. **LAWPComplianceEngine processes request:**
-   - Queries `LAWPImpactToken` for the token's `poolId`, `poolShareWAD`, and `rocReturned`.
-   - Computes total historical yield for the pool: `(poolYieldTracker[poolId] * poolShareWAD) / 1e18`.
-   - Subtracts the user's previously claimed yield: `totalHistorical - yieldClaimed[tokenId]`.
+2. `LAWPComplianceEngine` processes request:
+   - Validates that the caller is the owner of `tokenId`.
+   - Calculates the accrued yield based on the token's fractional share of the pool and the total yield deposited since the last claim.
+   - Updates `tokenYieldData` to prevent double-claiming.
 
-3. **Internal operations:**
-   - Updates the user's `yieldClaimed` and `rocReturned` state to prevent re-entrancy and idempotency failures.
-   - Executes cross-contract call to `LAWPYieldVault`.
+3. Internal operations:
+   - Calls `LAWPYieldVault.executeTransfer(user, amount)`.
+   - Calls `LAWPImpactToken.updateRocReturned(tokenId, amount)`.
 
-- **Result:**
-  - `LAWPYieldVault` pushes the exact cNGN amount to the user's wallet.
-  - `YieldClaimed` event is emitted.
+4. Result:
+   - User receives cNGN yield directly to their wallet.
+   - The token's accounting state is successfully updated without burning the ERC721 token.
+
+---
 
 ## State & Data Model
 
-- **LAWPStructs.TokenData (Struct)**
-  - **Description:** Tracks the exact fractional equity and RoC state of a contributor.
-  - **Fields:** `uint256 netPrincipal`, `uint256 rocReturned`, `uint256 poolShareWAD`, `uint256 poolId`
-  - **Precision Note:** `poolShareWAD` uses a WAD denominator (`1e18 = 100%`). This replaces the former Basis Points representation (`10,000 = 100%`). WAD precision means a contributor's equity share rounds to zero only if they provide less than 1 quintillionth of the pool - economically impossible at cNGN's 6-decimal scale.
+- **Pool Struct**
+  - Description: Tracks the lifecycle and financial state of a campaign.
+  - Fields: `amountRaised`, `fundingGoal`, `startTime`, `endTime`, `state` (ACTIVE, SETTLED, CANCELLED).
 
-- **LAWPStructs.Proposal (Struct - EIP-712)**
-  - **Description:** Gas-optimized proposal structure for off-chain Multi-Sig payloads.
-  - **Fields:** `uint96 totalRevenue`, `FlowType flowType`, `bool executed`, `uint40 submittedAt`
+- **TokenYieldData Mapping**
+  - Description: Tracks yield accounting per ERC721 token.
+  - Fields: `lastYieldAmount` (snapshot of global yield at last claim), `totalClaimed`.
 
-- **poolYieldTracker & poolRocTracker (Mappings)**
-  - **Description:** The core of the O(1) Math Engine. Tracks the cumulative, all-time Continuous Yield and Return of Contribution routed to a specific `poolId`. Used by `calculateProportionalYield` for gas-efficient pro-rata claim math without iteration.
-
-- **poolTotalPrincipal (Mapping)**
-  - **Description:** Records the total net campaign capital committed to a pool at deposit time (`grossAmount - riskFee`). Written once and never mutated. Serves as the hard protocol ceiling for cumulative RoC routing: `routeOperationalAllocation` will revert with `ExceedsPrincipalCap` if a RoC call would cause `poolRocTracker` to exceed this value, preventing funds from landing in the Yield Vault in an unclaimable state. Exposed to executors via `getPoolRocStatus()` and `getRemainingRocCapacity()` to avoid off-chain calculation.
-
-- **operationalBalances (Mapping)**
-  - **Description:** Pull-based ledger tracking claimable balances for operational actors (LA2, MVI1, Dev, Operational Treasury). On pool deposit, both the risk fee component and the net campaign capital component are credited to the `operationalTreasuryWallet`. On revenue routing (GRANT_INITIAL, GRANT_CONTINUOUS), LA2, MVI1, and Dev splits are credited here. Actors claim via `claimOperationalFunds()`.
+---
 
 ## Invariants & Security Model
 
-The protocol is mathematically secured by a Stateful Invariant Fuzzing suite (`LAWPInvariants.t.sol`) tested across 25,000 invariant runs with 250-depth state exploration and 10,000 fuzzing iterations.
-
-- **Invariant A (Per-Token RoC Ceiling):** A token's `rocReturned` can never exceed its `netPrincipal`. Enforced by the claim-math hard cap.
-- **Invariant B (YieldVault Solvency):** The YieldVault balance must always equal or exceed total outstanding unclaimed investor obligations (yield + RoC routed minus claimed).
-- **Invariant C (Dust Conservation):** Fractional arithmetic must never leak a single wei. `Sum(netPrincipal)` per pool must equal exactly `grossDeposit - riskFee`.
-- **Invariant D (The Transfer Hook):** A receiver's pending yield must evaluate to exactly 0 immediately post-transfer. Yield is never duplicated across secondary market trades.
-- **Invariant J (OperationalVault Solvency):** The OperationalVault balance must always be >= the sum of all unclaimed `operationalBalances` ledger entries.
-- **Invariant N (Pool-Level RoC Ceiling):** For every pool, `poolRocTracker` can never exceed `poolTotalPrincipal`. Enforced at the routing layer by `ExceedsPrincipalCap` guard and continuously verified by the invariant fuzzer.
-- **No Orphaned Capital:** Vaults lack public `deposit()` functions. All funds must pass through the Engine to be registered on an internal ledger.
-- **Single-Asset Invariant:** The settlement token (cNGN) is `immutable`. All vault balances and cumulative accounting trackers are permanently denominated in this token, eliminating asset-accounting drift.
-- **Vault Segregation:** `LAWPOperationalVault` receives all deposit capital. `LAWPYieldVault` is funded exclusively by revenue routing and must always be >= unclaimed investor yield and RoC liabilities.
+- Total amount raised in a pool perfectly matches the sum of all individual contributions (Conservation).
+- Pool state strictly transitions from ACTIVE to SETTLED or CANCELLED, with no path backward (State Machine).
+- Operational and Yield vault allocations always strictly respect the defined fractional split formula (Ratio).
 
 ### Failure Conditions
 
-Reverts when:
+- Reverts when:
+  - Contributing to a pool that is not `ACTIVE` or is outside its `endTime`.
+  - Attempting to claim yield for an ERC721 token owned by another address.
+  - Executing an operational proposal with fewer signatures than the MultiSig `threshold`.
+  - The `LAWPComplianceEngine` is paused by Governance during an emergency.
 
-- `LAWPImpactToken._update()`: The token transfer attempts to execute while the Compliance Engine is paused.
-- `LAWPMultiSigController.executeProposal()`: Signatures are unordered (duplicate submission) or `v, r, s` malleability is detected.
-- `LAWPComplianceEngine.processPoolDeposit()`: WAD fractions (`wadShares`) array does not sum to exactly 1e18 (100%).
-- `LAWPYieldVault.executeTransfer()` / `LAWPOperationalVault.executeTransfer()`: The caller is anyone other than the registered Compliance Engine.
+---
 
 ## External Dependencies
 
-- **OpenZeppelin Contracts v5.0.2**
-  - **Purpose:** Provides highly audited foundational logic: `Ownable2Step`, `Pausable`, `ReentrancyGuard`, `ERC20`, `SafeERC20`, and `EIP712`.
-- **cNGN Token (ERC20)**
-  - **Usage:** The immutable fiat-backed stablecoin for all capital formation, risk fees, and yield distribution. Fixed at deployment - cannot be changed.
+- **cNGN (ERC20)**
+  - Purpose: The underlying fiat-pegged stablecoin providing operational liquidity and representing real-world capital.
+
+---
 
 ## Configuration
 
-- **INITIAL_RISK_FEE_BPS**
-  - **Description:** The systemic risk fee deducted from gross deposits to stabilize the ecosystem.
-  - **Default:** 1000 (10%)
-- **BOARD_SIZE & MULTISIG_THRESHOLD**
-  - **Description:** Operational Board execution requirements.
-  - **Default:** 5 Board Members, 3 Signatures Required.
+- **rocFeeBPS**
+  - Description: Risk Fee deducted during capital recovery to fund system sustainability.
+  - Default: `1000` (10%)
+
+- **Threshold**
+  - Description: Minimum number of authorized Operator signatures required to route operational funds.
+  - Default: `3`
+
+---
 
 ## Getting Started
 
 ### Requirements
 
-- Foundry (Forge, Cast, Anvil, Chisel)
-- Solidity 0.8.30
+- Foundry (Forge, Anvil, Cast)
+- OpenZeppelin Contracts
+- Solidity `0.8.30`
 - Make
 
 ### Installation
@@ -177,88 +152,59 @@ forge install
 
 ### Environment Setup
 
-Create `.env` file in the root directory:
+Create `.env` file:
 
-```env
-DEPLOYER_PRIVATE_KEY=your_deployer_private_key
-ADMIN_SAFE_PRIVATE_KEY=0x...  # Private key for the Ownable2Step handover target (Admin Safe)
-BASE_SEPOLIA_RPC=https://sepolia.base.org
-BASESCAN_API_KEY=your_basescan_api_key
-
-CNGN_TOKEN_ADDRESS=0x...
-BASE_URI=ipfs://your-base-uri/
-BOARD_SIGNER_1=0x...
-BOARD_SIGNER_2=0x...
-BOARD_SIGNER_3=0x...
-BOARD_SIGNER_4=0x...
-BOARD_SIGNER_5=0x...
-
-LA2_WALLET=0x...
-MVI1_WALLET=0x...
-OPERATIONAL_TREASURY_WALLET=0x...
-DEV_WALLET=0x...
+```bash
+cp .env.sample .env
 ```
 
-### Build
+Ensure you configure your deployment private keys, RPC URLs, and wallet addresses as defined in the sample file.
+
+---
+
+## Build
 
 ```bash
 make build
 ```
 
-### Test
+---
 
-Run the standard unit and integration testing suite:
+## Test
 
 ```bash
 make test
 ```
 
-Run the heavy stateful invariant fuzzer (Ghost Variables & Parallel Truths):
+---
+
+## Coverage
 
 ```bash
-make test-invariant
+forge coverage
 ```
 
-### Coverage
+---
+
+## Deployment (Optional)
 
 ```bash
-make coverage
+# Local Anvil deployment
+make deploy-anvil
+
+# Base Sepolia deployment
+make deploy-base-sepolia
 ```
 
-### Deployment (Simulations & Live)
-
-We utilize an Atomic Bootstrap Pattern to deploy and immediately wire all trust boundaries. `Configure.s.sol` completes the FULL Ownable2Step handover atomically - the deployer initiates with `transferOwnership()` and the Admin Safe accepts with `acceptOwnership()` within the same script execution. No separate manual step is required.
-
-**Dry-Run / Simulate Deployments:**
-
-```bash
-make simulate-deploy-core
-make simulate-configure
-```
-
-**Live Testnet Broadcasts:**
-
-```bash
-make deploy-core-testnet
-make configure-protocol-testnet
-```
+---
 
 ## Notes & Variants
 
-- For Emergency Pausing, use `engine.emergencyPause()` (Callable by the Admin/Owner).
-- For Unpausing, use `engine.unpause()` (Callable only by the Admin/Owner).
+- For operational treasury disbursements, use `executeProposal()` with valid EIP-712 threshold signatures.
+- For emergency operations, Governance can use `emergencyPause()` on the Compliance Engine.
 
-## Roadmap
-
-- [x] Phase 1-3: Engine, Vault, Equity Tokens, fractional math.
-- [x] Phase 4: Off-Chain Verification (Multi-Sig & EIP-712).
-- [x] Phase 5: Stateful Invariant Fuzzing & O(1) Gas Optimizations.
-- [x] Phase 6: Direct Admin Safe Governance & Deployment Scripts.
-- [x] Phase 7: Dual-Treasury & Switchboard Refactoring.
-- [x] Phase 8: Immutable cNGN Settlement Token (single-asset invariant).
-- [ ] Phase 9: External Independent Audit.
-- [ ] Phase 10: Base Mainnet Launch.
+---
 
 ## License
 
-MIT License
+MIT

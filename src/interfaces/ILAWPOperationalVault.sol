@@ -15,25 +15,17 @@ interface ILAWPOperationalVault {
     /// @notice Emitted when the Engine explicitly commands the vault to move capital.
     event OperationalTransferExecuted(address indexed to, uint256 amount);
 
-    /// @notice Emitted when the Admin updates the recognized Compliance Engine.
-    event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
-
     /*//////////////////////////////////////////////////////////////
                                EXECUTION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Executes an outbound ERC-20 transfer.
-    /// @dev Strictly protected by the onlyEngine modifier. Follows CEI pattern inherently
-    /// as it only acts upon fully resolved Engine state.
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external;
+
+    /// @notice Executes a token transfer out of the vault.
+    /// @dev Can only be called by the Compliance Engine.
     /// @param _to The destination address.
-    /// @param _amount The exact amount of cNGN to transfer.
+    /// @param _amount The amount of cNGN to transfer.
     function executeTransfer(address _to, uint256 _amount) external;
-
-    /*//////////////////////////////////////////////////////////////
-                             CONFIGURATION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Updates the recognized Compliance Engine.
-    /// @dev Restricted to the Admin/Owner.
-    function setComplianceEngine(address _newEngine) external;
 }

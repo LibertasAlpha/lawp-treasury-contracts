@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import { ILAWPOperationalVault } from "../interfaces/ILAWPOperationalVault.sol";
+import {ILAWPOperationalVault} from "../interfaces/ILAWPOperationalVault.sol";
 
 /// @title LAWPOperationalVault
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Securely isolates Protocol & Payroll capital.
 /// @dev Designed to evolve independently from investor funds if operational vesting/multisig requirements are added later.
-contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, ReentrancyGuard {
+contract LAWPOperationalVault is ILAWPOperationalVault, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -22,6 +20,7 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
     error LAWPOperationalVault_InvalidAmount();
     error LAWPOperationalVault_InvalidAddress();
     error LAWPOperationalVault_UnauthorizedCaller();
+    error LAWPOperationalVault_AlreadyInitialized();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -51,35 +50,20 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the vault and sets the initial admin.
+    /// @notice Initializes the vault and binds it to the asset token.
     /// @param _cNGNToken Address of the stablecoin (cNGN).
-    /// @param _initialAdmin Address of the deployer or Admin Safe.
-    constructor(address _cNGNToken, address _initialAdmin) Ownable(_initialAdmin) {
+    constructor(address _cNGNToken) {
         if (_cNGNToken == address(0)) revert LAWPOperationalVault_InvalidAddress();
-
         cNGNToken = IERC20(_cNGNToken);
     }
 
-    /*//////////////////////////////////////////////////////////////
-                        CONFIGURATION LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Overridden to prevent accidental renunciation of ownership.
-    /// @dev Ownership must always be explicitly transferred to a valid address via the two-step process.
-    function renounceOwnership() public view override onlyOwner {
-        revert("LAWPOperationalVault: renounceOwnership is disabled");
-    }
-
-    /// @notice Links the Compliance Engine to the Vault.
-    /// @dev Callable only by the Admin/Owner. Crucial for establishing the physical trust boundary.
-    /// @param _engine The address of the new LAWPComplianceEngine contract.
-    function setComplianceEngine(address _engine) external override onlyOwner {
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external {
         if (_engine == address(0)) revert LAWPOperationalVault_InvalidAddress();
+        if (complianceEngine != address(0)) revert LAWPOperationalVault_AlreadyInitialized();
 
-        address oldEngine = complianceEngine;
         complianceEngine = _engine;
-
-        emit ComplianceEngineUpdated(oldEngine, _engine);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -88,12 +72,7 @@ contract LAWPOperationalVault is ILAWPOperationalVault, Ownable2Step, Reentrancy
 
     /// @inheritdoc ILAWPOperationalVault
     /// @dev Executes the transfer using SafeERC20. Relies on the ERC20 contract to revert natively if funds are insufficient.
-    function executeTransfer(address _to, uint256 _amount)
-        external
-        override
-        onlyComplianceEngine
-        nonReentrant
-    {
+    function executeTransfer(address _to, uint256 _amount) external override onlyComplianceEngine nonReentrant {
         if (_to == address(0)) revert LAWPOperationalVault_InvalidAddress();
         if (_amount == 0) revert LAWPOperationalVault_InvalidAmount();
 

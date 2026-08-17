@@ -1,0 +1,29 @@
+{
+  "title": "LAWP Architecture",
+  "nodes": [
+    {"id": "users", "label": "Contributors", "type": "actor", "row": 0},
+    {"id": "multisig", "label": "MultiSig Controller", "subtitle": "Governance", "type": "actor", "row": 0},
+    {"id": "pool", "label": "LAWPContributionPool", "type": "protocol", "row": 1},
+    {"id": "engine", "label": "LAWPComplianceEngine", "subtitle": "Coordinator", "type": "protocol", "row": 1},
+    {"id": "token", "label": "LAWPImpactToken", "subtitle": "ERC1155", "type": "protocol", "row": 2},
+    {"id": "opVault", "label": "LAWPOperationalVault", "type": "protocol", "row": 2},
+    {"id": "yieldVault", "label": "LAWPYieldVault", "type": "protocol", "row": 2},
+    {"id": "cNGN", "label": "cNGN Token", "type": "external", "row": 3}
+  ],
+  "edges": [
+    {"from": "users", "to": "pool", "label": "contribute(), claimRefund()"},
+    {"from": "users", "to": "engine", "label": "claimYield()"},
+    {"from": "multisig", "to": "engine", "label": "routeOperationalAllocation()"},
+    {"from": "pool", "to": "engine", "label": "processPoolDeposit()"},
+    {"from": "engine", "to": "token", "label": "mint() / burn()"},
+    {"from": "engine", "to": "opVault", "label": "executeTransfer()"},
+    {"from": "engine", "to": "yieldVault", "label": "executeTransfer()"},
+    {"from": "pool", "to": "cNGN", "label": "transferFrom()"},
+    {"from": "engine", "to": "cNGN", "label": "transfer()"},
+    {"from": "yieldVault", "to": "cNGN", "label": "transfer()"}
+  ],
+  "groups": [
+    {"label": "Treasury Layer", "nodes": ["opVault", "yieldVault", "token"]},
+    {"label": "Core Protocol", "nodes": ["pool", "engine"]}
+  ]
+}

@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
-import { ILAWPImpactToken } from "../interfaces/ILAWPImpactToken.sol";
-import { ILAWPComplianceEngine } from "../interfaces/ILAWPComplianceEngine.sol";
+import {LAWPStructs} from "../libraries/LAWPStructs.sol";
+import {ILAWPImpactToken} from "../interfaces/ILAWPImpactToken.sol";
+import {ILAWPComplianceEngine} from "../interfaces/ILAWPComplianceEngine.sol";
 
 /// @title LAWPImpactToken
 /// @author Obinna Franklin Duru (BinnaDev)
 /// @notice Fractional Bearer Asset tracking Impact Equity, RoC, and Continuous Yield rights.
 /// @dev Implements the Interception Hook to prevent yield double-spending on secondary markets.
-contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGuard {
+contract LAWPImpactToken is ERC721, ILAWPImpactToken, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                           IMPACT TOKEN ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -28,6 +26,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     error LAWPImpactToken_InvalidPrincipal();
     error LAWPImpactToken_UnauthorizedCaller();
     error LAWPImpactToken_ExceedsPrincipalCap();
+    error LAWPImpactToken_AlreadyInitialized();
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -39,7 +38,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     ///         less than 1 quintillionth of the pool economically impossible.
     uint256 public constant TOTAL_SHARES = 1e18;
 
-    /// @notice The LAWPComplianceEngine contract that controls minting, updates, and claims.
+    /// @notice The explicitly authorized orchestrator contract that controls minting, updates, and claims.
     address public complianceEngine;
 
     /// @notice The base URI for all token metadata. Since all unique data is onchain, this is a static URI pointing to a generic JSON schema on IPFS that can be used for all tokens.
@@ -60,41 +59,27 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
         if (msg.sender != complianceEngine) revert LAWPImpactToken_UnauthorizedCaller();
     }
 
-    constructor(address _initialAdmin, string memory _uri)
-        ERC721("LAWP Impact Token", "LAWP-IT")
-        Ownable(_initialAdmin)
-    {
-        if (bytes(_uri).length == 0) {
-            revert LAWPImpactToken_InvalidBaseURI();
-        }
-
+    constructor(string memory _uri) ERC721("LAWP Impact Token", "LAWP-IT") {
+        if (bytes(_uri).length == 0) revert LAWPImpactToken_InvalidBaseURI();
         baseTokenURI = _uri;
     }
 
-    /// @dev Overridden to prevent accidental renunciation of ownership.
-    /// Ownership must always be transferred to a valid address via the two-step process.
-    function renounceOwnership() public view override onlyOwner {
-        revert("LAWPImpactToken: renounceOwnership is disabled");
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external {
+        if (_engine == address(0)) revert LAWPImpactToken_ZeroAddress();
+        if (complianceEngine != address(0)) revert LAWPImpactToken_AlreadyInitialized();
+
+        complianceEngine = _engine;
     }
 
     /*//////////////////////////////////////////////////////////////
                         CONFIGURATION LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Links the Compliance Engine. Callable only by the Admin/Owner.
-    /// @param _engine The address of the LAWPComplianceEngine contract.
-    function setComplianceEngine(address _engine) external onlyOwner {
-        if (_engine == address(0)) revert LAWPImpactToken_ZeroAddress();
-
-        address oldEngine = complianceEngine;
-        complianceEngine = _engine;
-
-        emit ComplianceEngineUpdated(oldEngine, _engine);
-    }
-
     /// @notice Updates the static IPFS Base URI.
     /// @param _uri The new base URI string.
-    function setBaseURI(string memory _uri) external onlyOwner {
+    function setBaseURI(string memory _uri) external onlyComplianceEngine {
         if (bytes(_uri).length == 0) revert LAWPImpactToken_InvalidBaseURI();
 
         string memory oldURI = baseTokenURI;
@@ -137,10 +122,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
         tokenId = _nextTokenId++;
 
         _tokenData[tokenId] = LAWPStructs.TokenData({
-            netPrincipal: _netPrincipal,
-            rocReturned: 0,
-            poolShareWAD: _poolShareWAD,
-            poolId: _poolId
+            netPrincipal: _netPrincipal, rocReturned: 0, poolShareWAD: _poolShareWAD, poolId: _poolId
         });
 
         emit ImpactTokenMinted(tokenId, _to, _netPrincipal, _poolShareWAD);
@@ -149,11 +131,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     }
 
     /// @inheritdoc ILAWPImpactToken
-    function updateRocReturned(uint256 _tokenId, uint256 _amount)
-        external
-        override
-        onlyComplianceEngine
-    {
+    function updateRocReturned(uint256 _tokenId, uint256 _amount) external override onlyComplianceEngine {
         _requireOwned(_tokenId);
         if (_amount == 0) revert LAWPImpactToken_InvalidRocAmount();
 
@@ -166,12 +144,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
     }
 
     /// @inheritdoc ILAWPImpactToken
-    function getTokenData(uint256 _tokenId)
-        external
-        view
-        override
-        returns (LAWPStructs.TokenData memory)
-    {
+    function getTokenData(uint256 _tokenId) external view override returns (LAWPStructs.TokenData memory) {
         _requireOwned(_tokenId);
         return _tokenData[_tokenId];
     }
@@ -219,7 +192,7 @@ contract LAWPImpactToken is ERC721, ILAWPImpactToken, Ownable2Step, ReentrancyGu
                 //   - any future revert path in the engine is safely contained
                 // Yield that fails to flush here is NOT lost; it remains claimable by the
                 // outgoing owner via a direct `claimYield` call after the transfer completes.
-                try ILAWPComplianceEngine(engineAddr).claimYield(_tokenId) { } catch { }
+                try ILAWPComplianceEngine(engineAddr).claimYield(_tokenId) {} catch {}
             }
         }
 

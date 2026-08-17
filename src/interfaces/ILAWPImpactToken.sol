@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { LAWPStructs } from "../libraries/LAWPStructs.sol";
-import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {LAWPStructs} from "../libraries/LAWPStructs.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @title ILAWPImpactToken
 /// @author Obinna Franklin Duru (BinnaDev)
@@ -12,30 +12,30 @@ interface ILAWPImpactToken is IERC721 {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted when the Compliance Engine address is updated.
-    event ComplianceEngineUpdated(address indexed oldEngine, address indexed newEngine);
-
-    /// @notice Emitted when the base URI for token metadata is updated.
+    /// @notice Emitted when the IPFS Base URI is updated.
     event BaseURIUpdated(string oldURI, string newURI);
 
     /// @notice Emitted when an Impact Token is minted representing a contributor's equity.
-    event ImpactTokenMinted(
-        uint256 indexed tokenId, address indexed owner, uint256 netPrincipal, uint256 poolShareWAD
-    );
+    event ImpactTokenMinted(uint256 indexed tokenId, address indexed owner, uint256 netPrincipal, uint256 poolShareWAD);
 
     /*//////////////////////////////////////////////////////////////
                                  LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Mints a new Impact Token. Strictly gated to the Compliance Engine.
-    /// @param to The address of the contributor.
+    function setBaseURI(string memory _uri) external;
+
+    /// @notice Sets the Compliance Engine address (can only be called once).
+    /// @param _engine Address of the LAWPComplianceEngine.
+    function setComplianceEngine(address _engine) external;
+
+    /// @notice Mints a new fractional token to a contributor.
+    /// @dev Strict access control: only callable by LAWPComplianceEngine.
+    /// @param to Receiver address.
     /// @param netPrincipal The locked capital after the risk fee deduction.
     /// @param poolShareWAD The proportional share as a WAD fraction (1e18 = 100%).
     /// @param poolId The project deployment pool ID.
     /// @return The ID of the newly minted token.
-    function mint(address to, uint256 netPrincipal, uint256 poolShareWAD, uint256 poolId)
-        external
-        returns (uint256);
+    function mint(address to, uint256 netPrincipal, uint256 poolShareWAD, uint256 poolId) external returns (uint256);
 
     /// @notice Retrieves the immutable and updatable state data for a specific token.
     /// @param tokenId The ID of the token.
