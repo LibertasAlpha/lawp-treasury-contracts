@@ -94,7 +94,7 @@ contract LAWPMultiSigControllerTest is LAWPFixture {
                             DIGEST & CRYPTOGRAPHY
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetProposalDigest() public {
+    function test_GetProposalDigest() public view {
         uint256 proposalId = 1;
         uint256 amount = 500e6;
         LAWPStructs.FlowType flow = LAWPStructs.FlowType.GRANT_CONTINUOUS;

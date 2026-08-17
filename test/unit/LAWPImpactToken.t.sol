@@ -255,4 +255,22 @@ contract LAWPImpactTokenTest is LAWPFixture {
         // The token should successfully land in Bob's address despite the inner reentrancy failure.
         assertEq(tokenLocal.ownerOf(tokenId), bob);
     }
+
+    function test_Transfer_Hook_MaliciousEngine_NoReenter() public {
+        MaliciousEngine maliciousEngine = new MaliciousEngine();
+        LAWPImpactToken tokenLocal = new LAWPImpactToken("ipfs://test/");
+
+        tokenLocal.setComplianceEngine(address(maliciousEngine));
+        maliciousEngine.setToken(address(tokenLocal));
+
+        vm.prank(address(maliciousEngine));
+        uint256 tokenId = tokenLocal.mint(address(maliciousEngine), 100e6, 1e18, 1);
+
+        maliciousEngine.setShouldReenter(false);
+
+        vm.prank(address(maliciousEngine));
+        tokenLocal.transferFrom(address(maliciousEngine), bob, tokenId);
+
+        assertEq(tokenLocal.ownerOf(tokenId), bob);
+    }
 }
